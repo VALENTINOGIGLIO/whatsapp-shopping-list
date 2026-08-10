@@ -59,6 +59,19 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return snapshot.size;
   }
 
+  async deleteActiveItem(itemName) {
+    if (!itemName || typeof itemName !== 'string') return false;
+    await this._getDb();
+    const key = itemName.trim().toLowerCase();
+    const docRef = this.shoppingListColl.doc(key);
+    const doc = await docRef.get();
+    if (doc.exists) {
+      await docRef.delete();
+      return true;
+    }
+    return false;
+  }
+
   async getHabit(itemName) {
     if (!itemName || typeof itemName !== 'string') return null;
     await this._getDb();

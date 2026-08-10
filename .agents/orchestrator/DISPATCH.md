@@ -1,33 +1,15 @@
-## 2026-08-10T15:40:46Z
+## 2026-08-10T18:28:52+02:00
+<USER_REQUEST>
+You are the Project Orchestrator for the WhatsApp Shopping List application project.
 
-You are the PROJECT ORCHESTRATOR for the WhatsApp Shopping List application.
+Working Directory: /Users/gi/teamwork_projects/whatsapp_shopping_list
+Original Request File: /Users/gi/teamwork_projects/whatsapp_shopping_list/ORIGINAL_REQUEST.md
 
-Working directory: /Users/gi/teamwork_projects/whatsapp_shopping_list
-Agent directory: /Users/gi/teamwork_projects/whatsapp_shopping_list/.agents/orchestrator
-Original request file: /Users/gi/teamwork_projects/whatsapp_shopping_list/ORIGINAL_REQUEST.md
+A new follow-up request has been recorded in ORIGINAL_REQUEST.md:
+Requirement R4: Fix Render Deployment
+- The bot is already partially implemented but fails on Render with Puppeteer/Chrome errors ("Error: Could not find Chrome" or missing shared libraries).
+- You must fix the deployment to Render so that the app starts successfully without crashing. (Recommended approaches: use `@sparticuz/chromium` with `puppeteer-core`, or provide a `Dockerfile` and `render.yaml` for a Docker deployment).
+- Acceptance Criteria: The Render deployment is robust against missing Chrome dependencies and the `/health` endpoint responds with a 200 OK after deployment.
 
-Your mission is to decompose, plan, execute, and verify the implementation of the user request:
-1. WhatsApp integration (whatsapp-web.js or free Node.js alternative).
-2. Cloud database (e.g. Firebase Firestore) to persist active list and habits.
-3. List management & journaling:
-   - Add items (e.g. "cioccolato", "cioccolato eurospin" tracking store habits)
-   - Reset command clearing list and broadcasting notification to all members; reset [store] logging store purchase before clearing.
-4. CLI / Mock mode to test programmatically:
-   - CLI "add item" writes item to DB
-   - CLI "add item with store" extracts store name and updates habit tracker in DB
-   - CLI "reset" clears active list in DB and triggers broadcast notification logic
-
-## 2026-08-10T17:49:20Z
-
-You are the Project Orchestrator Successor (Gen 2) for the WhatsApp Shopping List application.
-
-Resume work at /Users/gi/teamwork_projects/whatsapp_shopping_list/.agents/orchestrator.
-Read handoff.md, BRIEFING.md, ORIGINAL_REQUEST.md, DISPATCH.md, PROJECT.md, and progress.md for current state.
-
-Your parent is 7f582e4f-3e43-417c-b006-90b49b237350 — use this ID for all escalation and status reporting (send_message).
-
-Your concrete next steps:
-1. Execute Milestone 4: WhatsApp Integration & Web Server (dispatch M4 Explorer, M4 Worker, and M4 verification subagents).
-2. Execute Milestone 5: Render Cloud Deployment Documentation (create DEPLOYMENT.md and verify).
-3. Execute full test suite (`node --test tests/**/*.test.js`) and report final completion to parent (7f582e4f-3e43-417c-b006-90b49b237350).
-
+Please analyze the codebase at `/Users/gi/teamwork_projects/whatsapp_shopping_list`, update your plan (`.agents/orchestrator/plan.md`) and progress (`.agents/orchestrator/progress.md`), dispatch tasks to specialized subagents to implement and verify R4, execute tests, verify `/health` and deployment configurations, and when completed, send a victory/completion report to Sentinel.
+</USER_REQUEST>

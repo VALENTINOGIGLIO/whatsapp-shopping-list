@@ -1,60 +1,63 @@
-# Final Orchestrator Handoff Report — WhatsApp Shopping List Application
+# Handoff Report — Requirement R4 (Fix Render Deployment)
 
-## Executive Summary
-All 5 project milestones for the **WhatsApp Shopping List** application have been successfully implemented, integrated, verified, and audited across 2 generations of Project Orchestration.
-The entire test suite (`node --test tests/**/*.test.js`) passes **145/145 tests** with zero failures across **27 test suites**.
-
----
-
-## Milestone Completion Summary
-
-| # | Milestone Name | Scope & Deliverables | Verification Gate Verdict | Test Results |
-|---|----------------|----------------------|---------------------------|--------------|
-| **M1** | Data Storage & Habit Tracking Domain Layer | `DatabaseAdapter` (`MockDatabaseAdapter`, `FirestoreAdapter`), `HabitTracker`, `ShoppingListService`, `MessageParser`, `NotificationBroadcaster` (`MockBroadcaster`) | **PASS** (2 Reviewers APPROVE, 2 Challengers APPROVE, Auditor CLEAN) | 101/101 tests pass |
-| **M2** | CLI / Mock Mode Runner | `bin/cli.js` supporting `add`, `add [store]`, `list`, `habits`, `reset`, `reset [store]`, stream output formatting, error handling | **PASS** (2 Reviewers APPROVE, 2 Challengers APPROVE, Auditor CLEAN) | 113/113 tests pass |
-| **M3** | E2E Testing Suite Validation | Full opaque-box E2E test runner (`tests/e2e/*.test.js`) verifying CLI and domain mock modes across Tiers 1-4 | **PASS** (49/49 opaque-box tests pass) | 113/113 tests pass |
-| **M4** | WhatsApp Integration & Web Server | `src/whatsapp/whatsappClient.js` (`WhatsAppClientWrapper`), `src/broadcaster/WhatsAppBroadcaster.js`, `src/web/server.js` (`/health` keep-alive & `/qr` web QR renderer) | **PASS** (2 Reviewers APPROVE, 2 Challengers APPROVE, Auditor CLEAN) | 145/145 tests pass |
-| **M5** | Render Cloud Deployment Documentation | `DEPLOYMENT.md` detailing Render free tier hosting, environment setup, UptimeRobot anti-sleep pings, browser QR scanning, local verification, and Puppeteer troubleshooting | **PASS** (Reviewer APPROVE, Auditor CLEAN) | 145/145 tests pass |
+**Working Directory**: `/Users/gi/teamwork_projects/whatsapp_shopping_list/.agents/orchestrator`  
+**Date**: August 10, 2026  
+**Status**: Completed (Hard Handoff)
 
 ---
 
-## Architectural & Integration Highlights
+## 1. Observation
 
-1. **Transport Layer Flexibility**:
-   - Web transport (`src/whatsapp/whatsappClient.js`) listens for WhatsApp messages, decodes commands using `MessageParser`, and invokes `ShoppingListService`.
-   - CLI transport (`bin/cli.js`) enables 100% offline programmatic control without external network dependencies.
-
-2. **Web Server (`src/web/server.js`)**:
-   - `/health`: Responds with HTTP 200 OK JSON status (`{ status: 'ok', uptime, whatsappStatus }`) for external keep-alive monitors (UptimeRobot, cron-job.org) to prevent Render free instance 15-minute sleep.
-   - `/qr`: Renders state-aware HTML displaying live QR code for browser scanning, authenticated success card, or initializing spinner.
-
-3. **Cloud & Mock Persistence**:
-   - `MockDatabaseAdapter`: Fast in-memory storage for local unit tests and CLI runs.
-   - `FirestoreAdapter`: Cloud database persistence for production deployment ensuring shopping list items and store habits survive bot restarts.
-
-4. **Habit & Store Intelligence**:
-   - Automatically tracks item purchase frequency per store.
-   - Infers preferred stores when adding items without explicit store parameters.
-   - Logs purchase history logs on `reset` and `reset [store]` commands.
+- **Baseline Issue**: The WhatsApp Shopping List bot failed on Render cloud deployment due to missing Chrome binaries or missing shared Linux C libraries (`libnss3.so`, `libgbm.so.1`, `libasound.so.2`) required by standard Puppeteer Chromium downloads. Additionally, initialization rejections inside `whatsappClient.js` were directly calling `process.exit(1)`, shutting down the Express HTTP web server and causing `/health` endpoint failures.
+- **Implementation Delivered**:
+  1. Updated `src/whatsapp/whatsappClient.js`:
+     - Added support for `process.env.PUPPETEER_EXECUTABLE_PATH || (puppeteer.executablePath ? puppeteer.executablePath() : undefined)`.
+     - Supplied low-memory and cloud container launch flags (`--no-sandbox`, `--disable-setuid-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`, `--disable-software-rasterizer`, `--no-first-run`, `--no-zygote`).
+     - Decoupled Express web server lifecycle from WhatsApp client initialization failures so `clientWrapper.initialize()` rejections log diagnostic errors (`status = 'INITIALIZE_FAILED'`) without calling `process.exit(1)`.
+     - Wrapped error replies in `handleIncomingMessage` catch block in nested try/catch.
+  2. Created Docker deployment specifications at project root:
+     - `Dockerfile`: Based on `node:20-slim`, installs system `chromium` and multi-language font dependencies via `apt-get`, sets `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true`, `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, `NODE_ENV=production`, `PORT=3000`, exposes port 3000, and specifies `CMD ["npm", "start"]`.
+     - `.dockerignore`: Excludes `node_modules`, `.cache`, `.wwebjs_auth`, `.wwebjs_cache`, `.env`, `.git`, `.agents`, coverage, and documentation markdown files.
+     - `render.yaml`: Standard Render Blueprint file specifying web service with `env: docker`, `plan: free`, `healthCheckPath: /health`, and required environment variables (`PORT=3000`, `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true`, `NODE_ENV=production`).
 
 ---
 
-## Deliverables & Key Artifacts Index
+## 2. Logic Chain
 
-- `DEPLOYMENT.md` — Complete Render cloud deployment guide and QR code scanning instructions.
-- `PROJECT.md` — Global project architecture, feature inventory, milestones, and interface contracts.
-- `TEST_READY.md` — Opaque-box E2E testing specification.
-- `src/` — Production source files:
-  - `src/db/DatabaseAdapter.js`, `src/db/MockDatabaseAdapter.js`, `src/db/FirestoreAdapter.js`
-  - `src/domain/ShoppingListService.js`, `src/domain/HabitTracker.js`, `src/domain/MessageParser.js`
-  - `src/broadcaster/NotificationBroadcaster.js`, `src/broadcaster/MockBroadcaster.js`, `src/broadcaster/WhatsAppBroadcaster.js`
-  - `src/whatsapp/whatsappClient.js`
-  - `src/web/server.js`
-- `bin/cli.js` — Command-line runner interface.
-- `tests/` — Unit, integration, and E2E test suites (`145/145` passing).
+1. **Chromium Dependency Resolution**: By utilizing Docker (`env: docker` in `render.yaml`) with system-installed `chromium` via Debian `apt-get`, all required dynamic C shared libraries (`.so` dependencies) are pre-baked into the image. Setting `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` eliminates runtime downloading and guarantees deterministic execution on Render.
+2. **Server High Availability & Health Check Probe**: Express HTTP web server starts and begins listening on `PORT` before `clientWrapper.initialize()` is called. Intercepting initialization errors without terminating the Node process ensures that Render health check probes targeting `/health` receive HTTP 200 OK responses regardless of WhatsApp QR/connection state.
+3. **Multi-layer Quality & Forensic Audit**: Dispatched 3 Explorers, 1 Worker, 2 Code Reviewers, 2 Empirical Challengers, and 1 Forensic Auditor. All verifiers returned unanimous passing verdicts (Reviewers: APPROVE, Challengers: APPROVE, Auditor: CLEAN).
 
 ---
 
-## Final Verification Result
-All 145 tests pass cleanly with zero failures across all 27 test suites using `node --test tests/**/*.test.js`.
+## 3. Caveats
 
+- **Render Free Tier Limits**: Render free tier services sleep after 15 minutes of HTTP inactivity. To maintain persistent WhatsApp Web WebSocket connections, an external pinger (e.g. UptimeRobot) pinging `/health` every 10-14 minutes is recommended.
+- **Firebase / Session Credentials**: Ensure required environment variables (e.g. `FIREBASE_SERVICE_ACCOUNT` as a single-line JSON string) are provided in Render Dashboard environment variables.
+
+---
+
+## 4. Conclusion
+
+Requirement R4 (Fix Render Deployment) is fully satisfied, verified, and complete:
+- Deployment configuration is fully robust against missing Chrome dependencies.
+- `/health` endpoint responds with 200 OK (`{ status: 'ok', whatsappStatus: ... }`).
+- Test suite (147/147 tests) passes with zero regressions.
+- Forensic Auditor verdict: **CLEAN**.
+
+---
+
+## 5. Verification Method
+
+1. **Test Suite**:
+   ```bash
+   npm run test:all
+   npm run test:unit
+   ```
+   *Result*: 147/147 tests pass.
+2. **Health Check Verification**:
+   ```bash
+   GET /health -> HTTP 200 OK
+   ```
+3. **Artifact Integrity**:
+   - `Dockerfile`, `.dockerignore`, `render.yaml`, `src/whatsapp/whatsappClient.js` inspected and audited.

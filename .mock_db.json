@@ -5,15 +5,15 @@
       "id": "mele",
       "itemName": "mele",
       "stores": {
-        "coop": 46
+        "coop": 72
       },
       "storeCounts": {
-        "coop": 46
+        "coop": 72
       },
       "favoriteStore": "coop",
-      "totalPurchases": 46,
-      "lastUpdated": "2026-08-10T15:56:27.294Z",
-      "updatedAt": "2026-08-10T15:56:27.294Z"
+      "totalPurchases": 72,
+      "lastUpdated": "2026-08-10T16:32:12.589Z",
+      "updatedAt": "2026-08-10T16:32:12.589Z"
     }
   ],
   "purchaseHistory": [
@@ -498,6 +498,279 @@
       "clearedBy": "cli_user",
       "timestamp": "2026-08-10T15:56:27.295Z",
       "resetAt": "2026-08-10T15:56:27.295Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379408274_35uir",
+      "items": [
+        {
+          "id": "item_1786379408226_wfmqr",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:30:08.226Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:30:08.274Z",
+      "resetAt": "2026-08-10T16:30:08.274Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379431389_7xokt",
+      "items": [
+        {
+          "id": "item_1786379431340_0xwmy",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:30:31.340Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:30:31.389Z",
+      "resetAt": "2026-08-10T16:30:31.389Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379459804_p6elj",
+      "items": [
+        {
+          "id": "item_1786379459756_gav08",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:30:59.756Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:30:59.804Z",
+      "resetAt": "2026-08-10T16:30:59.804Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379460450_7ric8",
+      "items": [
+        {
+          "id": "item_1786379460399_lpmhs",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:00.399Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:00.450Z",
+      "resetAt": "2026-08-10T16:31:00.450Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379461528_1ssj9",
+      "items": [
+        {
+          "id": "item_1786379461477_rkp4g",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:01.477Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:01.528Z",
+      "resetAt": "2026-08-10T16:31:01.528Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379461838_5gl7z",
+      "items": [
+        {
+          "id": "item_1786379461788_3uq67",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:01.788Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:01.838Z",
+      "resetAt": "2026-08-10T16:31:01.838Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379462330_6oogk",
+      "items": [
+        {
+          "id": "item_1786379462279_oybp3",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:02.279Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:02.330Z",
+      "resetAt": "2026-08-10T16:31:02.330Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379463842_97qfj",
+      "items": [
+        {
+          "id": "item_1786379463790_4g73y",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:03.790Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:03.842Z",
+      "resetAt": "2026-08-10T16:31:03.842Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379465161_uw31q",
+      "items": [
+        {
+          "id": "item_1786379465066_33kqr",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:05.066Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:05.161Z",
+      "resetAt": "2026-08-10T16:31:05.161Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379466795_n3yiy",
+      "items": [
+        {
+          "id": "item_1786379466745_zfbfm",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:06.745Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:06.795Z",
+      "resetAt": "2026-08-10T16:31:06.795Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379480811_kabe8",
+      "items": [
+        {
+          "id": "item_1786379480759_w75ps",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:31:20.759Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:31:20.811Z",
+      "resetAt": "2026-08-10T16:31:20.811Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379528491_teseq",
+      "items": [
+        {
+          "id": "item_1786379528445_dfkck",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:32:08.445Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:32:08.491Z",
+      "resetAt": "2026-08-10T16:32:08.491Z",
+      "itemsCleared": 1
+    },
+    {
+      "id": "reset_1786379532590_j43li",
+      "items": [
+        {
+          "id": "item_1786379532488_1vlhu",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-08-10T16:32:12.488Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-08-10T16:32:12.590Z",
+      "resetAt": "2026-08-10T16:32:12.590Z",
       "itemsCleared": 1
     }
   ]

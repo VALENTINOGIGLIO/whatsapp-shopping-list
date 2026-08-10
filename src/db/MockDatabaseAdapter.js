@@ -58,6 +58,14 @@ export class MockDatabaseAdapter extends DatabaseAdapter {
     return count;
   }
 
+  async deleteActiveItem(itemName) {
+    if (!itemName) return false;
+    const key = itemName.trim().toLowerCase();
+    const initialLength = this.activeItems.length;
+    this.activeItems = this.activeItems.filter(i => i.canonicalName !== key && i.name.toLowerCase() !== key);
+    return this.activeItems.length < initialLength;
+  }
+
   async getHabit(itemName) {
     if (!itemName || typeof itemName !== 'string') return null;
     const key = itemName.trim().toLowerCase();

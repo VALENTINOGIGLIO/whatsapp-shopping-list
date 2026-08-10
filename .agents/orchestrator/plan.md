@@ -1,39 +1,44 @@
-# Project Plan: WhatsApp Shopping List Application
+# Orchestration Plan — Requirement R4: Fix Render Deployment
 
-## Objectives
-1. Build a Node.js WhatsApp shopping list bot using `whatsapp-web.js` (or Node.js alternative).
-2. Cloud DB persistence (Firestore / adapter pattern with mock storage for tests).
-3. List management with store habit tracking (`cioccolato`, `cioccolato eurospin`, `reset`, `reset [store]`).
-4. CLI / Mock mode runner to programmatically execute and test all features without requiring active WhatsApp connection during automated tests.
-5. Deployment guide for free cloud hosting (Render) & QR code scanning instructions.
+## Overview
+Requirement R4: Fix Render deployment for the WhatsApp Shopping List bot.
+The bot currently experiences Puppeteer/Chrome errors ("Error: Could not find Chrome" or missing shared libraries).
+Acceptance Criteria:
+1. The Render deployment configuration is robust against missing Chrome dependencies (via Dockerfile + render.yaml with system chromium).
+2. `src/whatsapp/whatsappClient.js` updated to respect `PUPPETEER_EXECUTABLE_PATH` and handle initialization errors gracefully.
+3. The `/health` endpoint responds with a 200 OK after deployment.
+4. All 145+ unit/integration tests pass.
 
-## Work Breakdown & Milestones
-- **Step 0: Survey & Architecture Setup**
-  - Spawn 3 Explorers in parallel to survey project structure, existing files, npm environment, dependencies, and requirements.
-  - Synthesize findings and write `PROJECT.md` with Feature Inventory, Architecture, Code Layout, and Milestones.
+## Plan Steps
 
-- **Track 1: E2E Testing Suite**
-  - Spawn E2E Testing Orchestrator / Test Writers to create full test harness and test cases (Tiers 1-4).
-  - Publish `TEST_INFRA.md` and `TEST_READY.md`.
+### Phase 1: Survey & Exploration [COMPLETED]
+- Explorer 1: Analyzed Puppeteer dependencies and `executablePath` hardcoding in `whatsappClient.js`.
+- Explorer 2: Analyzed Express server setup, `/health` endpoint, and lifecycle crash coupling in `whatsappClient.js`.
+- Explorer 3: Evaluated Render deployment options (Docker vs `@sparticuz/chromium`) and provided complete configuration templates.
 
-- **Track 2: Implementation Milestones**
-  - **M1: Data Storage & Habit Tracking Domain Layer**
-    - Cloud DB integration (Firestore / configurable local mock adapter).
-    - Shopping list CRUD and habit tracking logic (item -> store mapping, frequency counter).
-  - **M2: Message Handling & WhatsApp Bot Integration**
-    - `whatsapp-web.js` integration layer (QR generation, message listener, chat broadcasting).
-    - Command parser & handler for `add item`, `add item store`, `reset`, `reset [store]`.
-  - **M3: CLI / Mock Mode Runner**
-    - CLI runner enabling programmatic execution of commands: add, add with store, reset, reset store.
-    - CLI output & broadcast notification trigger verification.
-  - **M4: Final Integration & E2E Verification**
-    - Phase 1: Pass 100% of E2E test suite (Tiers 1-4).
-    - Phase 2: Adversarial coverage hardening (Tier 5).
-  - **M5: Deployment Documentation**
-    - Comprehensive guide for deploying to Render (or free cloud service), environment variables setup, and QR code scanning procedure.
+### Phase 2: Synthesis & Solution Design [COMPLETED]
+- Selected Option B: Docker deployment on Render with Debian `node:20-slim` base image, preinstalled `chromium` system dependencies, `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, and `render.yaml`.
+- Identified code changes in `src/whatsapp/whatsappClient.js`:
+  1. Support `process.env.PUPPETEER_EXECUTABLE_PATH`.
+  2. Non-fatal initialization error handling so Express web server and `/health` remain active.
+  3. Robust error handling in incoming message handler.
 
-## Verification Gate Criteria per Milestone
-1. Build and unit/integration tests pass.
-2. All 2 Reviewer verdicts are APPROVE.
-3. All 2 Challenger verdicts confirm empirical correctness.
-4. Forensic Auditor verdict is CLEAN (no hardcoding, fake facade implementations, or cheating).
+### Phase 3: Implementation [COMPLETED]
+- Worker 1 (`worker_r1`):
+  - Updated `src/whatsapp/whatsappClient.js`.
+  - Created `Dockerfile` in root.
+  - Created `.dockerignore` in root.
+  - Created `render.yaml` in root.
+  - Verified unit and integration tests.
+
+### Phase 4: Verification & Gating [COMPLETED]
+- Reviewer 1: APPROVE
+- Reviewer 2: APPROVE
+- Challenger 1: APPROVE
+- Challenger 2: APPROVE
+- Auditor 1: CLEAN
+- Gate Result: PASS (`GATE_STATUS.md`)
+
+### Phase 5: Finalization & Victory Report [COMPLETED]
+- Synthesized all results into victory report.
+- Sent victory/completion report to Sentinel (parent ID: `e9d6c04c-7c74-4dad-8af1-5211d136cee4`).

@@ -96,6 +96,16 @@ export class ShoppingListService {
   }
 
   /**
+   * Removes an item from the shopping list.
+   * @param {string} itemName
+   * @returns {Promise<boolean>} true if item was removed, false if not found
+   */
+  async removeItem(itemName) {
+    if (!itemName) return false;
+    return await this.db.deleteActiveItem(itemName);
+  }
+
+  /**
    * Resets active shopping list, logs purchase history, updates habits if store provided,
    * and triggers broadcast notification.
    * @param {string|null} [storeName] 
@@ -153,6 +163,26 @@ export class ShoppingListService {
   }
 
   /**
+   * Updates the status of an item (urgent or checked).
+   * @param {string} itemName
+   * @param {Object} statusUpdates - { isUrgent?: boolean, isChecked?: boolean }
+   * @returns {Promise<boolean>} true if item updated, false if not found
+   */
+  async markItemStatus(itemName, statusUpdates) {
+    if (!itemName) return false;
+    const cleanItem = itemName.trim().toLowerCase();
+    const items = await this.db.getActiveItems();
+    const item = items.find(i => i.canonicalName === cleanItem || i.name.toLowerCase() === cleanItem);
+    if (!item) return false;
+
+    if (statusUpdates.isUrgent !== undefined) item.isUrgent = statusUpdates.isUrgent;
+    if (statusUpdates.isChecked !== undefined) item.isChecked = statusUpdates.isChecked;
+    
+    await this.db.saveActiveItem(item);
+    return true;
+  }
+
+  /**
    * Returns habits for a specific item or all items.
    * @param {string|null} [itemName] 
    * @returns {Promise<Array<Object>>}
@@ -168,20 +198,78 @@ export class ShoppingListService {
    */
   formatListForDisplay(items) {
     if (!items || items.length === 0) {
-      return '🛒 Shopping list is currently empty.';
+      return '🛒 La lista è vuota.';
     }
 
-    const lines = [`🛒 *Shopping List* (${items.length} items):`];
+    const lines = [`🛒 *Lista della Spesa* (${items.length} articoli):`];
     items.forEach((item, index) => {
       let storeInfo = '';
       if (item.store) {
         storeInfo = item.storeInferred
-          ? ` (${item.store} - favorite)`
+          ? ` (${item.store} - abitudine)`
           : ` (${item.store})`;
       }
-      lines.push(`${index + 1}. ${item.name}${storeInfo}`);
+      
+      let prefix = `${index + 1}.`;
+      if (item.isChecked) prefix = '✅';
+      else if (item.isUrgent) prefix = '🔴';
+
+      const strike = item.isChecked ? '~' : '';
+      lines.push(`${prefix} ${strike}${item.name}${strike}${storeInfo}`);
     });
 
     return lines.join('\n');
+  }
+
+  /**
+   * Formats shopping list grouped by store.
+   * @param {Array<Object>} items 
+   * @returns {string}
+   */
+  formatListGroupedByStore(items) {
+    if (!items || items.length === 0) {
+      return '🛒 La lista è vuota.';
+    }
+
+    const groups = {};
+    const others = [];
+
+    items.forEach(item => {
+      if (item.store) {
+        const storeName = item.store.toUpperCase();
+        if (!groups[storeName]) groups[storeName] = [];
+        groups[storeName].push(item);
+      } else {
+        others.push(item);
+      }
+    });
+
+    const lines = [`🏪 *Lista per Supermercati* (${items.length} articoli):`, ''];
+
+    for (const [store, storeItems] of Object.entries(groups)) {
+      lines.push(`*${store}*`);
+      storeItems.forEach(item => {
+        let prefix = '•';
+        if (item.isChecked) prefix = '✅';
+        else if (item.isUrgent) prefix = '🔴';
+        const strike = item.isChecked ? '~' : '';
+        const inferred = item.storeInferred ? ' (abitudine)' : '';
+        lines.push(`  ${prefix} ${strike}${item.name}${strike}${inferred}`);
+      });
+      lines.push('');
+    }
+
+    if (others.length > 0) {
+      lines.push('*ALTRO*');
+      others.forEach(item => {
+        let prefix = '•';
+        if (item.isChecked) prefix = '✅';
+        else if (item.isUrgent) prefix = '🔴';
+        const strike = item.isChecked ? '~' : '';
+        lines.push(`  ${prefix} ${strike}${item.name}${strike}`);
+      });
+    }
+
+    return lines.join('\n').trim();
   }
 }

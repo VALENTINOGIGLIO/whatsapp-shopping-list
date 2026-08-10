@@ -71,6 +71,8 @@ export class WhatsAppClientWrapper {
 
       if (!text) return;
 
+      console.log(`[DEBUG] Received message: "${text}" from: ${remoteJid} (fromMe: ${msg.key.fromMe})`);
+
       // Il bot condivide l'account con l'utente (stesso numero).
       // Se il messaggio è stato inviato dal nostro numero (msg.key.fromMe),
       // dobbiamo capire se l'ha scritto l'utente dal telefono o se l'ha inviato il bot stesso.
@@ -90,58 +92,85 @@ export class WhatsAppClientWrapper {
         } else if (lower === '/ferma') {
           this.activeSessions.delete(remoteJid);
           response = '🔴 Modalità Spesa DISATTIVATA in questa chat.\nI messaggi normali verranno di nuovo ignorati.';
-        } else if (this.activeSessions.has(remoteJid)) {
-          // Modalità sessione attiva: prende ogni messaggio come comando o articolo
-          if (lower === 'lista') {
-            const items = await this.shoppingListService.getList();
-            response = this.shoppingListService.formatListForDisplay(items);
-          } else if (lower.startsWith('reset')) {
-            const parts = lower.split(' ');
-            parts.shift();
-            const store = parts.join(' ').trim() || null;
-            const result = await this.shoppingListService.resetList(store, remoteJid);
-            response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
-          } else {
-            // Aggiunta automatica dell'articolo
-            const parts = lower.split(' ');
-            const item = parts[0];
-            parts.shift();
-            const store = parts.join(' ').trim() || null;
-            
-            if (item) {
-               const result = await this.shoppingListService.addItem(item, store, remoteJid);
-               reaction = '✅';
-            }
-          }
         } else {
-          // Modalità classica: richiede il prefisso "!" per non intralciare la chat
-          if (!lower.startsWith('!')) return;
+          let isSessionActive = this.activeSessions.has(remoteJid);
+          let commandText = lower;
 
-          const commandText = lower.substring(1).trim();
+          if (!isSessionActive) {
+            if (!lower.startsWith('!')) return;
+            commandText = lower.substring(1).trim();
+          }
+
           if (commandText === 'lista') {
             const items = await this.shoppingListService.getList();
             response = this.shoppingListService.formatListForDisplay(items);
+          } else if (commandText === 'lista supermercati' || commandText === 'lista supermercato') {
+            const items = await this.shoppingListService.getList();
+            response = this.shoppingListService.formatListGroupedByStore(items);
           } else if (commandText.startsWith('reset')) {
-            const parts = commandText.split(' ');
-            parts.shift();
-            const store = parts.join(' ').trim() || null;
+            const store = commandText.replace(/^reset\s*/, '').trim() || null;
             const result = await this.shoppingListService.resetList(store, remoteJid);
             response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
-          } else if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
-            const parts = commandText.split(' ');
-            parts.shift();
-            const item = parts[0];
-            parts.shift();
-            const store = parts.join(' ').trim() || null;
-            
-            if (!item) {
-               response = '❌ Specifica cosa aggiungere (es. !spesa latte)';
-            } else {
-               const result = await this.shoppingListService.addItem(item, store, remoteJid);
-               reaction = '✅';
+          } else if (commandText.startsWith('cancella ') || commandText.startsWith('cancella-')) {
+            const item = commandText.replace(/^cancella[-\s]+/, '').trim();
+            if (item) {
+              const removed = await this.shoppingListService.removeItem(item);
+              if (removed) reaction = '✅';
+              else response = `❌ Articolo "${item}" non trovato nella lista.`;
             }
+          } else if (commandText.startsWith('spunta ')) {
+            const item = commandText.replace(/^spunta\s+/, '').trim();
+            if (item) {
+              const updated = await this.shoppingListService.markItemStatus(item, { isChecked: true });
+              if (updated) reaction = '✅';
+              else response = `❌ Articolo "${item}" non trovato nella lista.`;
+            }
+          } else if (commandText.startsWith('urgente ')) {
+            const item = commandText.replace(/^urgente\s+/, '').trim();
+            if (item) {
+              const updated = await this.shoppingListService.markItemStatus(item, { isUrgent: true });
+              if (updated) reaction = '✅';
+              else response = `❌ Articolo "${item}" non trovato nella lista.`;
+            }
+          } else if (commandText === 'aiuto' || commandText === 'help') {
+            response = '🤖 *Comandi Bot Spesa:*\n' +
+                       '- `/avvia` / `/ferma` (attiva/disattiva inserimento rapido)\n' +
+                       '- `[prodotto]` (aggiunge alla lista)\n' +
+                       '- `[prodotto] da [supermercato]` (es. latte da eurospin)\n' +
+                       '- `lista` (mostra la lista)\n' +
+                       '- `lista supermercati` (mostra la lista divisa per negozi)\n' +
+                       '- `cancella [prodotto]` (rimuove l\'articolo)\n' +
+                       '- `spunta [prodotto]` (segna come preso)\n' +
+                       '- `urgente [prodotto]` (segna come urgente 🔴)\n' +
+                       '- `reset` o `reset [supermercato]` (svuota la lista)';
           } else {
-            response = '🤖 Comandi bot spesa:\n- /avvia (attiva l\'inserimento rapido)\n- !spesa [oggetto] [negozio]\n- !lista\n- !reset [negozio]';
+            // Se in modalità sessione, trattiamo qualsiasi altra stringa come aggiunta articolo
+            // Se in modalità classica, supportiamo !spesa e !aggiungi per retrocompatibilità
+            let itemText = commandText;
+            if (!isSessionActive) {
+               if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
+                 itemText = commandText.replace(/^(aggiungi|spesa)\s+/, '').trim();
+               } else {
+                 response = '🤖 Comando non riconosciuto. Usa `!aiuto` per la lista dei comandi.';
+                 itemText = '';
+               }
+            }
+            
+            if (itemText) {
+              // Parse "item da store"
+              let item = itemText;
+              let store = null;
+              const daIndex = itemText.lastIndexOf(' da ');
+              if (daIndex !== -1) {
+                item = itemText.substring(0, daIndex).trim();
+                store = itemText.substring(daIndex + 4).trim();
+              }
+              
+              if (item) {
+                await this.shoppingListService.addItem(item, store, remoteJid);
+                reaction = '✅';
+              }
+            }
           }
         }
       } catch (err) {
