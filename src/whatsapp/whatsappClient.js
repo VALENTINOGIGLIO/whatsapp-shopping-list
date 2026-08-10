@@ -64,12 +64,20 @@ export class WhatsAppClientWrapper {
 
     this.sock.ev.on('messages.upsert', async (m) => {
       const msg = m.messages[0];
-      if (!msg.message || msg.key.fromMe) return;
+      if (!msg.message) return;
 
       const remoteJid = msg.key.remoteJid;
       const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
       if (!text) return;
+
+      // Il bot condivide l'account con l'utente (stesso numero).
+      // Se il messaggio è stato inviato dal nostro numero (msg.key.fromMe),
+      // dobbiamo capire se l'ha scritto l'utente dal telefono o se l'ha inviato il bot stesso.
+      // Poiché tutti i messaggi del bot iniziano con un'emoji specifica, li ignoriamo se matchano.
+      if (msg.key.fromMe && /^[✅❌🟢🔴🤖🛒]/.test(text)) {
+        return;
+      }
 
       const lower = text.trim().toLowerCase();
       let response = '';
