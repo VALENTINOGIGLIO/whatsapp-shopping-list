@@ -1,7 +1,5 @@
-import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
-import puppeteer from 'puppeteer';
-import qrcodeTerminal from 'qrcode-terminal';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import pino from 'pino';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { MessageParser } from '../domain/MessageParser.js';
@@ -14,15 +12,6 @@ import { ShoppingListService } from '../domain/ShoppingListService.js';
 import { WhatsAppBroadcaster } from '../broadcaster/WhatsAppBroadcaster.js';
 
 export class WhatsAppClientWrapper {
-  /**
-   * @param {Object} [options]
-   * @param {import('../domain/ShoppingListService.js').ShoppingListService} [options.service]
-   * @param {Object} [options.client] - Injected mock or client instance for testing
-   * @param {string} [options.dataPath] - Path for LocalAuth session storage
-   * @param {Object} [options.puppeteerOptions] - Puppeteer launch options
-   * @param {boolean} [options.showTerminalQr] - Whether to output QR code ASCII to terminal
-   * @param {boolean} [options.allowSelfMessages] - Whether to process messages sent by self
-   */
   constructor(options = {}) {
     this.service = options.service || null;
     this.status = 'INITIALIZING';
@@ -30,122 +19,70 @@ export class WhatsAppClientWrapper {
     this.pairingCode = null;
     this.lastQrTimestamp = null;
     this.lastTargetChatId = process.env.WHATSAPP_FAMILY_CHAT_ID || null;
-    this.showTerminalQr = options.showTerminalQr !== undefined ? options.showTerminalQr : true;
+    this.dataPath = options.dataPath || './auth_info_baileys';
     this.allowSelfMessages = options.allowSelfMessages || false;
-
-    if (options.client) {
-      this.client = options.client;
-    } else {
-      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || (puppeteer.executablePath ? puppeteer.executablePath() : undefined);
-      const puppeteerArgs = options.puppeteerOptions || options.puppeteer || {
-        headless: true,
-        executablePath,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process', // Extremely important for reducing memory footprint in Docker/Render
-          '--disable-extensions',
-          '--disable-background-networking',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-breakpad',
-          '--disable-client-side-phishing-detection',
-          '--disable-component-update',
-          '--disable-default-apps',
-          '--disable-domain-reliability',
-          '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
-          '--disable-hang-monitor',
-          '--disable-ipc-flooding-protection',
-          '--disable-notifications',
-          '--disable-print-preview',
-          '--disable-prompt-on-repost',
-          '--disable-renderer-backgrounding',
-          '--disable-sync',
-          '--metrics-recording-only',
-          '--mute-audio',
-          '--no-default-browser-check',
-          '--no-pings',
-          '--password-store=basic',
-          '--use-mock-keychain'
-        ]
-      };
-
-      this.client = new Client({
-        authStrategy: new LocalAuth({ dataPath: options.dataPath || './.wwebjs_auth' }),
-        puppeteer: puppeteerArgs,
-        webVersionCache: {
-          type: 'remote',
-          remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-        }
-      });
-    }
-
-    this._setupListeners();
-  }
-
-  _setupListeners() {
-    if (!this.client || typeof this.client.on !== 'function') return;
-
-    this.client.on('qr', (qr) => {
-      this.qrCode = qr;
-      this.pairingCode = null; // Clear pairing code if QR is newly generated
-      this.status = 'QR_READY';
-      this.lastQrTimestamp = Date.now();
-      if (this.showTerminalQr) {
-        console.log('📱 [WhatsApp] New QR code generated. Scan in terminal or via /qr endpoint:');
-        try {
-          qrcodeTerminal.generate(qr, { small: true });
-        } catch (err) {
-          console.error('Error generating terminal QR:', err);
-        }
-      }
-    });
-
-    this.client.on('authenticated', () => {
-      this.qrCode = null;
-      this.pairingCode = null;
-      this.status = 'AUTHENTICATED';
-      console.log('🔒 [WhatsApp] Client authenticated successfully.');
-    });
-
-    this.client.on('ready', () => {
-      this.qrCode = null;
-      this.pairingCode = null;
-      this.status = 'READY';
-      console.log('🚀 [WhatsApp] Client is READY!');
-    });
-
-    this.client.on('auth_failure', (msg) => {
-      this.status = 'AUTH_FAILURE';
-      console.error('❌ [WhatsApp] Authentication failure:', msg);
-    });
-
-    this.client.on('disconnected', (reason) => {
-      this.status = 'DISCONNECTED';
-      this.qrCode = null;
-      this.pairingCode = null;
-      console.warn('⚠️ [WhatsApp] Client disconnected:', reason);
-    });
-
-    this.client.on('message', async (msg) => {
-      await this.handleIncomingMessage(msg);
-    });
+    this.sock = null;
   }
 
   async initialize() {
-    if (this.client && typeof this.client.initialize === 'function') {
-      return await this.client.initialize();
-    }
+    console.log('🔄 [Baileys] Starting initialization...');
+    const { state, saveCreds } = await useMultiFileAuthState(this.dataPath);
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`[Baileys] using WA v${version.join('.')}, isLatest: ${isLatest}`);
+
+    const logger = pino({ level: 'silent' });
+
+    this.sock = makeWASocket({
+      version,
+      logger,
+      printQRInTerminal: true,
+      auth: state,
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    });
+
+    this.sock.ev.on('creds.update', saveCreds);
+
+    this.sock.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        this.qrCode = qr;
+        this.pairingCode = null;
+        this.status = 'QR_READY';
+        this.lastQrTimestamp = Date.now();
+        console.log('📱 [Baileys] New QR code generated.');
+      }
+
+      if (connection === 'close') {
+        this.status = 'DISCONNECTED';
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        console.warn('⚠️ [Baileys] Connection closed due to', lastDisconnect?.error, ', reconnecting:', shouldReconnect);
+        if (shouldReconnect) {
+          this.initialize();
+        } else {
+          console.log('❌ [Baileys] Logged out from WhatsApp.');
+        }
+      } else if (connection === 'open') {
+        this.status = 'READY';
+        this.qrCode = null;
+        this.pairingCode = null;
+        console.log('🚀 [Baileys] Client is READY and Connected!');
+      }
+    });
+
+    this.sock.ev.on('messages.upsert', async (m) => {
+      if (m.type !== 'notify') return;
+      for (const msg of m.messages) {
+        if (!msg.message) continue;
+        await this.handleIncomingMessage(msg);
+      }
+    });
   }
 
   async destroy() {
-    if (this.client && typeof this.client.destroy === 'function') {
-      return await this.client.destroy();
+    if (this.sock) {
+      this.sock.logout();
+      this.sock.end(undefined);
     }
   }
 
@@ -158,15 +95,21 @@ export class WhatsAppClientWrapper {
   }
 
   async requestPairingCode(phoneNumber) {
-    if (!this.client || typeof this.client.requestPairingCode !== 'function') {
-      throw new Error('requestPairingCode is not supported by this client version');
+    if (!this.sock) {
+      throw new Error('Socket not initialized');
     }
     
-    // Request code from whatsapp-web.js
-    const code = await this.client.requestPairingCode(phoneNumber);
-    this.pairingCode = code;
-    this.qrCode = null; // Prioritize showing pairing code
-    return code;
+    // Baileys pairing code
+    if (!this.sock.authState.creds.registered) {
+      // Small delay required by Baileys
+      await new Promise(r => setTimeout(r, 1000));
+      const code = await this.sock.requestPairingCode(phoneNumber);
+      this.pairingCode = code;
+      this.qrCode = null;
+      return code;
+    } else {
+      throw new Error('Already registered/authenticated');
+    }
   }
 
   getStatus() {
@@ -178,7 +121,7 @@ export class WhatsAppClientWrapper {
   }
 
   getClient() {
-    return this.client;
+    return this.sock;
   }
 
   getLastTargetChatId() {
@@ -189,30 +132,28 @@ export class WhatsAppClientWrapper {
     this.lastTargetChatId = chatId;
   }
 
-  /**
-   * Routes incoming WhatsApp message to MessageParser and ShoppingListService
-   * @param {Object} msg 
-   * @returns {Promise<string|null>}
-   */
   async handleIncomingMessage(msg) {
-    if (!msg || typeof msg !== 'object') return null;
-    if (msg.fromMe && !this.allowSelfMessages) return null;
+    const isFromMe = msg.key.fromMe;
+    if (isFromMe && !this.allowSelfMessages) return null;
 
-    const text = msg.body;
-    if (!text || typeof text !== 'string') return null;
+    // Extract text from various Baileys message types
+    const text = msg.message?.conversation || 
+                 msg.message?.extendedTextMessage?.text || 
+                 '';
+    
+    if (!text) return null;
 
-    if (msg.from) {
-      this.lastTargetChatId = msg.from;
+    const from = msg.key.remoteJid;
+    if (from) {
+      this.lastTargetChatId = from;
     }
 
-    const sender = msg._data?.notifyName ||
-      (msg.author ? msg.author.split('@')[0] : (msg.from ? msg.from.split('@')[0] : 'user1')) ||
-      'user1';
+    const sender = msg.pushName || from.split('@')[0] || 'user1';
 
     const parsed = MessageParser.parse(text);
 
     if (!this.service) {
-      console.warn('⚠️ [WhatsApp] ShoppingListService not attached to client wrapper.');
+      console.warn('⚠️ [WhatsApp] ShoppingListService not attached.');
       return null;
     }
 
@@ -265,22 +206,14 @@ export class WhatsAppClientWrapper {
         }
       }
 
-      if (typeof msg.reply === 'function') {
-        await msg.reply(replyText);
-      } else if (this.client && typeof this.client.sendMessage === 'function' && msg.from) {
-        await this.client.sendMessage(msg.from, replyText);
+      if (from) {
+        await this.sock.sendMessage(from, { text: replyText }, { quoted: msg });
       }
     } catch (err) {
       console.error('❌ [WhatsApp] Error processing message:', err);
       replyText = `⚠️ Si è verificato un errore: ${err.message || err}`;
-      try {
-        if (typeof msg.reply === 'function') {
-          await msg.reply(replyText);
-        } else if (this.client && typeof this.client.sendMessage === 'function' && msg.from) {
-          await this.client.sendMessage(msg.from, replyText);
-        }
-      } catch (replyErr) {
-        console.error('❌ [WhatsApp] Error sending error reply to user:', replyErr);
+      if (from) {
+        await this.sock.sendMessage(from, { text: replyText });
       }
     }
 
@@ -300,7 +233,15 @@ if (executedPath && (currentFilePath === executedPath || executedPath.endsWith('
   const service = new ShoppingListService(db, broadcaster, habitTracker);
 
   const clientWrapper = new WhatsAppClientWrapper({ service });
-  broadcaster.client = clientWrapper.getClient();
+  
+  // Custom patch for broadcaster to work with Baileys
+  broadcaster.client = {
+    sendMessage: async (chatId, message) => {
+      if (clientWrapper.sock) {
+        await clientWrapper.sock.sendMessage(chatId, { text: message });
+      }
+    }
+  };
 
   const port = process.env.PORT || 3000;
   startWebServer({ port, whatsappClient: clientWrapper }).then(() => {
@@ -314,4 +255,3 @@ if (executedPath && (currentFilePath === executedPath || executedPath.endsWith('
     process.exit(1);
   });
 }
-
