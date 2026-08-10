@@ -1,0 +1,187 @@
+import { MockDatabaseAdapter } from '../db/MockDatabaseAdapter.js';
+import { MockBroadcaster } from '../broadcaster/MockBroadcaster.js';
+import { HabitTracker } from './HabitTracker.js';
+
+export class ShoppingListService {
+  /**
+   * @param {import('../db/DatabaseAdapter.js').DatabaseAdapter|Object} [dbAdapterOrOptions]
+   * @param {import('../broadcaster/NotificationBroadcaster.js').NotificationBroadcaster} [broadcaster]
+   * @param {HabitTracker} [habitTracker]
+   */
+  constructor(dbAdapterOrOptions, broadcaster, habitTracker) {
+    if (dbAdapterOrOptions && typeof dbAdapterOrOptions === 'object' && dbAdapterOrOptions.dbAdapter) {
+      this.db = dbAdapterOrOptions.dbAdapter;
+      this.broadcaster = dbAdapterOrOptions.broadcaster || null;
+      this.habitTracker = dbAdapterOrOptions.habitTracker || null;
+    } else {
+      this.db = dbAdapterOrOptions || null;
+      this.broadcaster = broadcaster || null;
+      this.habitTracker = habitTracker || null;
+    }
+
+    if (!this.db) {
+      this.db = new MockDatabaseAdapter();
+    }
+    if (!this.broadcaster) {
+      this.broadcaster = new MockBroadcaster();
+    }
+    if (!this.habitTracker) {
+      this.habitTracker = new HabitTracker(this.db);
+    }
+  }
+
+  /**
+   * Adds an item to the shopping list, updating habit tracker if store is provided,
+   * or inferring favorite store if store is omitted.
+   * @param {string} itemName 
+   * @param {string|null} [storeName] 
+   * @param {string} [sender] 
+   * @returns {Promise<{ item: Object, habitUpdated: boolean }>}
+   */
+  async addItem(itemName, storeName = null, sender = 'user1') {
+    if (!itemName || typeof itemName !== 'string' || itemName.trim() === '') {
+      throw new Error('Item name cannot be empty');
+    }
+
+    const cleanItem = itemName.trim();
+    let finalStore = storeName ? storeName.trim().toLowerCase() : null;
+    let storeInferred = false;
+    let habitUpdated = false;
+
+    if (finalStore) {
+      await this.habitTracker.trackPurchase(cleanItem, finalStore, this.db);
+      habitUpdated = true;
+    } else {
+      const favoriteStore = await this.habitTracker.getFavoriteStore(cleanItem, this.db);
+      if (favoriteStore) {
+        finalStore = favoriteStore;
+        storeInferred = true;
+      }
+    }
+
+    const activeItems = await this.db.getActiveItems();
+    const existingIndex = activeItems.findIndex(
+      i => i.name.toLowerCase() === cleanItem.toLowerCase() || (i.canonicalName && i.canonicalName === cleanItem.toLowerCase())
+    );
+
+    let itemToSave;
+    const nowIso = new Date().toISOString();
+
+    if (existingIndex >= 0) {
+      const existing = activeItems[existingIndex];
+      itemToSave = {
+        ...existing,
+        name: cleanItem,
+        canonicalName: cleanItem.toLowerCase(),
+        store: finalStore || existing.store,
+        storeInferred: storeName ? false : (finalStore ? storeInferred : (existing.storeInferred || false)),
+        addedBy: sender || existing.addedBy,
+        createdAt: nowIso
+      };
+    } else {
+      itemToSave = {
+        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        name: cleanItem,
+        canonicalName: cleanItem.toLowerCase(),
+        store: finalStore,
+        storeInferred: storeInferred,
+        addedBy: sender || 'user1',
+        createdAt: nowIso
+      };
+    }
+
+    await this.db.saveActiveItem(itemToSave);
+
+    return { item: itemToSave, habitUpdated };
+  }
+
+  /**
+   * Resets active shopping list, logs purchase history, updates habits if store provided,
+   * and triggers broadcast notification.
+   * @param {string|null} [storeName] 
+   * @param {string} [sender] 
+   * @returns {Promise<{ resetRecord: Object, itemsCleared: number }>}
+   */
+  async resetList(storeName = null, sender = 'user1') {
+    const activeItems = await this.db.getActiveItems();
+    const itemsCleared = activeItems.length;
+    const cleanStore = storeName ? storeName.trim().toLowerCase() : null;
+
+    if (cleanStore && itemsCleared > 0) {
+      for (const item of activeItems) {
+        await this.habitTracker.trackPurchase(item.name, cleanStore, this.db);
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const resetRecord = {
+      id: `reset_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      items: [...activeItems],
+      store: cleanStore,
+      storeName: cleanStore,
+      resetBy: sender || 'user1',
+      clearedBy: sender || 'user1',
+      timestamp: nowIso,
+      resetAt: nowIso,
+      itemsCleared: itemsCleared
+    };
+
+    await this.db.savePurchaseHistory(resetRecord);
+    await this.db.deleteActiveItems();
+
+    const broadcastMsg = cleanStore
+      ? `Spesa completata presso ${cleanStore.toUpperCase()}! La lista è stata svuotata (${itemsCleared} articoli).`
+      : `Spesa completata! La lista è stata svuotata (${itemsCleared} articoli).`;
+
+    if (this.broadcaster) {
+      if (typeof this.broadcaster.broadcastReset === 'function') {
+        await this.broadcaster.broadcastReset(resetRecord);
+      } else if (typeof this.broadcaster.broadcast === 'function') {
+        await this.broadcaster.broadcast(broadcastMsg);
+      }
+    }
+
+    return { resetRecord, itemsCleared };
+  }
+
+  /**
+   * Returns active items on the shopping list.
+   * @returns {Promise<Array<Object>>}
+   */
+  async getList() {
+    return await this.db.getActiveItems();
+  }
+
+  /**
+   * Returns habits for a specific item or all items.
+   * @param {string|null} [itemName] 
+   * @returns {Promise<Array<Object>>}
+   */
+  async getHabits(itemName = null) {
+    return await this.habitTracker.getHabits(itemName, this.db);
+  }
+
+  /**
+   * Formats shopping list for text display.
+   * @param {Array<Object>} items 
+   * @returns {string}
+   */
+  formatListForDisplay(items) {
+    if (!items || items.length === 0) {
+      return '🛒 Shopping list is currently empty.';
+    }
+
+    const lines = [`🛒 *Shopping List* (${items.length} items):`];
+    items.forEach((item, index) => {
+      let storeInfo = '';
+      if (item.store) {
+        storeInfo = item.storeInferred
+          ? ` (${item.store} - favorite)`
+          : ` (${item.store})`;
+      }
+      lines.push(`${index + 1}. ${item.name}${storeInfo}`);
+    });
+
+    return lines.join('\n');
+  }
+}

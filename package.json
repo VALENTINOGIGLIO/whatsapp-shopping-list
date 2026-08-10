@@ -1,0 +1,31 @@
+{
+  "name": "whatsapp-shopping-list",
+  "version": "1.0.0",
+  "description": "WhatsApp Shopping List Bot with habit tracking and cloud persistence",
+  "type": "module",
+  "main": "src/domain/ShoppingListService.js",
+  "scripts": {
+    "start": "node src/whatsapp/whatsappClient.js",
+    "cli": "node bin/cli.js",
+    "test": "node --test tests/e2e/*.test.js",
+    "test:unit": "node --test tests/unit/**/*.test.js",
+    "test:e2e": "node --test tests/e2e/*.test.js",
+    "test:all": "node --test tests/**/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.23.0"
+  },
+  "devDependencies": {
+    "c8": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
