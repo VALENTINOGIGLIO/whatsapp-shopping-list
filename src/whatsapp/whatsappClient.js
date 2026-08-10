@@ -27,6 +27,7 @@ export class WhatsAppClientWrapper {
     this.service = options.service || null;
     this.status = 'INITIALIZING';
     this.qrCode = null;
+    this.pairingCode = null;
     this.lastQrTimestamp = null;
     this.lastTargetChatId = process.env.WHATSAPP_FAMILY_CHAT_ID || null;
     this.showTerminalQr = options.showTerminalQr !== undefined ? options.showTerminalQr : true;
@@ -46,7 +47,31 @@ export class WhatsAppClientWrapper {
           '--disable-gpu',
           '--disable-software-rasterizer',
           '--no-first-run',
-          '--no-zygote'
+          '--no-zygote',
+          '--single-process', // Extremely important for reducing memory footprint in Docker/Render
+          '--disable-extensions',
+          '--disable-background-networking',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-breakpad',
+          '--disable-client-side-phishing-detection',
+          '--disable-component-update',
+          '--disable-default-apps',
+          '--disable-domain-reliability',
+          '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
+          '--disable-hang-monitor',
+          '--disable-ipc-flooding-protection',
+          '--disable-notifications',
+          '--disable-print-preview',
+          '--disable-prompt-on-repost',
+          '--disable-renderer-backgrounding',
+          '--disable-sync',
+          '--metrics-recording-only',
+          '--mute-audio',
+          '--no-default-browser-check',
+          '--no-pings',
+          '--password-store=basic',
+          '--use-mock-keychain'
         ]
       };
 
@@ -64,6 +89,7 @@ export class WhatsAppClientWrapper {
 
     this.client.on('qr', (qr) => {
       this.qrCode = qr;
+      this.pairingCode = null; // Clear pairing code if QR is newly generated
       this.status = 'QR_READY';
       this.lastQrTimestamp = Date.now();
       if (this.showTerminalQr) {
@@ -78,12 +104,14 @@ export class WhatsAppClientWrapper {
 
     this.client.on('authenticated', () => {
       this.qrCode = null;
+      this.pairingCode = null;
       this.status = 'AUTHENTICATED';
       console.log('🔒 [WhatsApp] Client authenticated successfully.');
     });
 
     this.client.on('ready', () => {
       this.qrCode = null;
+      this.pairingCode = null;
       this.status = 'READY';
       console.log('🚀 [WhatsApp] Client is READY!');
     });
@@ -96,6 +124,7 @@ export class WhatsAppClientWrapper {
     this.client.on('disconnected', (reason) => {
       this.status = 'DISCONNECTED';
       this.qrCode = null;
+      this.pairingCode = null;
       console.warn('⚠️ [WhatsApp] Client disconnected:', reason);
     });
 
@@ -118,6 +147,22 @@ export class WhatsAppClientWrapper {
 
   getQrCode() {
     return this.qrCode;
+  }
+
+  getPairingCode() {
+    return this.pairingCode;
+  }
+
+  async requestPairingCode(phoneNumber) {
+    if (!this.client || typeof this.client.requestPairingCode !== 'function') {
+      throw new Error('requestPairingCode is not supported by this client version');
+    }
+    
+    // Request code from whatsapp-web.js
+    const code = await this.client.requestPairingCode(phoneNumber);
+    this.pairingCode = code;
+    this.qrCode = null; // Prioritize showing pairing code
+    return code;
   }
 
   getStatus() {
