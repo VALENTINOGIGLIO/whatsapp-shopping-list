@@ -95,10 +95,17 @@ export class WhatsAppClientWrapper {
         } else {
           let isSessionActive = this.activeSessions.has(remoteJid);
           let commandText = lower;
+          let usedDoubleExclamation = false;
 
           if (!isSessionActive) {
-            if (!lower.startsWith('!')) return;
-            commandText = lower.substring(1).trim();
+            if (lower.startsWith('!!')) {
+              usedDoubleExclamation = true;
+              commandText = lower.substring(2).trim();
+            } else if (lower.startsWith('!')) {
+              commandText = lower.substring(1).trim();
+            } else {
+              return;
+            }
           }
 
           if (commandText === 'lista') {
@@ -147,7 +154,7 @@ export class WhatsAppClientWrapper {
             // Se in modalità sessione, trattiamo qualsiasi altra stringa come aggiunta articolo
             // Se in modalità classica, supportiamo !spesa e !aggiungi per retrocompatibilità
             let itemText = commandText;
-            if (!isSessionActive) {
+            if (!isSessionActive && !usedDoubleExclamation) {
                if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
                  itemText = commandText.replace(/^(aggiungi|spesa)\s+/, '').trim();
                } else {
