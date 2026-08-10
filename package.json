@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/domain/ShoppingListService.js",
   "scripts": {
+    "postinstall": "npx puppeteer browsers install chrome",
     "start": "node src/whatsapp/whatsappClient.js",
     "cli": "node bin/cli.js",
     "test": "node --test tests/e2e/*.test.js",
