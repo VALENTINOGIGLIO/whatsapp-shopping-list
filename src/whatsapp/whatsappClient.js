@@ -73,6 +73,7 @@ export class WhatsAppClientWrapper {
 
       const lower = text.trim().toLowerCase();
       let response = '';
+      let reaction = '';
 
       try {
         if (lower === '/avvia') {
@@ -101,7 +102,7 @@ export class WhatsAppClientWrapper {
             
             if (item) {
                const result = await this.shoppingListService.addItem(item, store, remoteJid);
-               response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+               reaction = '✅';
             }
           }
         } else {
@@ -129,7 +130,7 @@ export class WhatsAppClientWrapper {
                response = '❌ Specifica cosa aggiungere (es. !spesa latte)';
             } else {
                const result = await this.shoppingListService.addItem(item, store, remoteJid);
-               response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+               reaction = '✅';
             }
           } else {
             response = '🤖 Comandi bot spesa:\n- /avvia (attiva l\'inserimento rapido)\n- !spesa [oggetto] [negozio]\n- !lista\n- !reset [negozio]';
@@ -142,6 +143,9 @@ export class WhatsAppClientWrapper {
       
       if (response) {
         await this.sock.sendMessage(remoteJid, { text: response });
+      }
+      if (reaction) {
+        await this.sock.sendMessage(remoteJid, { react: { text: reaction, key: msg.key } });
       }
     });
   }
