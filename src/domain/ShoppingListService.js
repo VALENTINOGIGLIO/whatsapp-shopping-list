@@ -3,11 +3,6 @@ import { MockBroadcaster } from '../broadcaster/MockBroadcaster.js';
 import { HabitTracker } from './HabitTracker.js';
 
 export class ShoppingListService {
-  /**
-   * @param {import('../db/DatabaseAdapter.js').DatabaseAdapter|Object} [dbAdapterOrOptions]
-   * @param {import('../broadcaster/NotificationBroadcaster.js').NotificationBroadcaster} [broadcaster]
-   * @param {HabitTracker} [habitTracker]
-   */
   constructor(dbAdapterOrOptions, broadcaster, habitTracker) {
     if (dbAdapterOrOptions && typeof dbAdapterOrOptions === 'object' && dbAdapterOrOptions.dbAdapter) {
       this.db = dbAdapterOrOptions.dbAdapter;
@@ -30,15 +25,8 @@ export class ShoppingListService {
     }
   }
 
-  /**
-   * Adds an item to the shopping list, updating habit tracker if store is provided,
-   * or inferring favorite store if store is omitted.
-   * @param {string} itemName 
-   * @param {string|null} [storeName] 
-   * @param {string} [sender] 
-   * @returns {Promise<{ item: Object, habitUpdated: boolean }>}
-   */
-  async addItem(itemName, storeName = null, sender = 'user1') {
+  async addItem(chatId, itemName, storeName = null, sender = 'user1') {
+    if (!chatId) throw new Error('chatId is required');
     if (!itemName || typeof itemName !== 'string' || itemName.trim() === '') {
       throw new Error('Item name cannot be empty');
     }
@@ -49,17 +37,17 @@ export class ShoppingListService {
     let habitUpdated = false;
 
     if (finalStore) {
-      await this.habitTracker.trackPurchase(cleanItem, finalStore, this.db);
+      await this.habitTracker.trackPurchase(chatId, cleanItem, finalStore, this.db);
       habitUpdated = true;
     } else {
-      const favoriteStore = await this.habitTracker.getFavoriteStore(cleanItem, this.db);
+      const favoriteStore = await this.habitTracker.getFavoriteStore(chatId, cleanItem, this.db);
       if (favoriteStore) {
         finalStore = favoriteStore;
         storeInferred = true;
       }
     }
 
-    const activeItems = await this.db.getActiveItems();
+    const activeItems = await this.db.getActiveItems(chatId);
     const existingIndex = activeItems.findIndex(
       i => i.name.toLowerCase() === cleanItem.toLowerCase() || (i.canonicalName && i.canonicalName === cleanItem.toLowerCase())
     );
@@ -90,36 +78,25 @@ export class ShoppingListService {
       };
     }
 
-    await this.db.saveActiveItem(itemToSave);
+    await this.db.saveActiveItem(chatId, itemToSave);
 
     return { item: itemToSave, habitUpdated };
   }
 
-  /**
-   * Removes an item from the shopping list.
-   * @param {string} itemName
-   * @returns {Promise<boolean>} true if item was removed, false if not found
-   */
-  async removeItem(itemName) {
-    if (!itemName) return false;
-    return await this.db.deleteActiveItem(itemName);
+  async removeItem(chatId, itemName) {
+    if (!chatId || !itemName) return false;
+    return await this.db.deleteActiveItem(chatId, itemName);
   }
 
-  /**
-   * Resets active shopping list, logs purchase history, updates habits if store provided,
-   * and triggers broadcast notification.
-   * @param {string|null} [storeName] 
-   * @param {string} [sender] 
-   * @returns {Promise<{ resetRecord: Object, itemsCleared: number }>}
-   */
-  async resetList(storeName = null, sender = 'user1') {
-    const activeItems = await this.db.getActiveItems();
+  async resetList(chatId, storeName = null, sender = 'user1') {
+    if (!chatId) throw new Error('chatId is required');
+    const activeItems = await this.db.getActiveItems(chatId);
     const itemsCleared = activeItems.length;
     const cleanStore = storeName ? storeName.trim().toLowerCase() : null;
 
     if (cleanStore && itemsCleared > 0) {
       for (const item of activeItems) {
-        await this.habitTracker.trackPurchase(item.name, cleanStore, this.db);
+        await this.habitTracker.trackPurchase(chatId, item.name, cleanStore, this.db);
       }
     }
 
@@ -136,8 +113,8 @@ export class ShoppingListService {
       itemsCleared: itemsCleared
     };
 
-    await this.db.savePurchaseHistory(resetRecord);
-    await this.db.deleteActiveItems();
+    await this.db.savePurchaseHistory(chatId, resetRecord);
+    await this.db.deleteActiveItems(chatId);
 
     const broadcastMsg = cleanStore
       ? `Spesa completata presso ${cleanStore.toUpperCase()}! La lista è stata svuotata (${itemsCleared} articoli).`
@@ -154,48 +131,30 @@ export class ShoppingListService {
     return { resetRecord, itemsCleared };
   }
 
-  /**
-   * Returns active items on the shopping list.
-   * @returns {Promise<Array<Object>>}
-   */
-  async getList() {
-    return await this.db.getActiveItems();
+  async getList(chatId) {
+    if (!chatId) throw new Error('chatId is required');
+    return await this.db.getActiveItems(chatId);
   }
 
-  /**
-   * Updates the status of an item (urgent or checked).
-   * @param {string} itemName
-   * @param {Object} statusUpdates - { isUrgent?: boolean, isChecked?: boolean }
-   * @returns {Promise<boolean>} true if item updated, false if not found
-   */
-  async markItemStatus(itemName, statusUpdates) {
-    if (!itemName) return false;
+  async markItemStatus(chatId, itemName, statusUpdates) {
+    if (!chatId || !itemName) return false;
     const cleanItem = itemName.trim().toLowerCase();
-    const items = await this.db.getActiveItems();
+    const items = await this.db.getActiveItems(chatId);
     const item = items.find(i => i.canonicalName === cleanItem || i.name.toLowerCase() === cleanItem);
     if (!item) return false;
 
     if (statusUpdates.isUrgent !== undefined) item.isUrgent = statusUpdates.isUrgent;
     if (statusUpdates.isChecked !== undefined) item.isChecked = statusUpdates.isChecked;
     
-    await this.db.saveActiveItem(item);
+    await this.db.saveActiveItem(chatId, item);
     return true;
   }
 
-  /**
-   * Returns habits for a specific item or all items.
-   * @param {string|null} [itemName] 
-   * @returns {Promise<Array<Object>>}
-   */
-  async getHabits(itemName = null) {
-    return await this.habitTracker.getHabits(itemName, this.db);
+  async getHabits(chatId, itemName = null) {
+    if (!chatId) throw new Error('chatId is required');
+    return await this.habitTracker.getHabits(chatId, itemName, this.db);
   }
 
-  /**
-   * Formats shopping list for text display.
-   * @param {Array<Object>} items 
-   * @returns {string}
-   */
   formatListForDisplay(items) {
     if (!items || items.length === 0) {
       return '🛒 La lista è vuota.';
@@ -221,11 +180,6 @@ export class ShoppingListService {
     return lines.join('\n');
   }
 
-  /**
-   * Formats shopping list grouped by store.
-   * @param {Array<Object>} items 
-   * @returns {string}
-   */
   formatListGroupedByStore(items) {
     if (!items || items.length === 0) {
       return '🛒 La lista è vuota.';

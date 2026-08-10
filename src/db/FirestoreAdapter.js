@@ -25,9 +25,24 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return this.db;
   }
 
-  async getActiveItems() {
+  /**
+   * Helper to get collections for a specific chat.
+   * @param {string} chatId 
+   */
+  async _getCollections(chatId) {
+    if (!chatId) throw new Error('chatId is required');
     await this._getDb();
-    const snapshot = await this.shoppingListColl.get();
+    const chatDoc = this.db.collection('chats').doc(chatId);
+    return {
+      shoppingListColl: chatDoc.collection('shopping_list'),
+      habitsColl: chatDoc.collection('habits'),
+      historyColl: chatDoc.collection('purchase_history')
+    };
+  }
+
+  async getActiveItems(chatId) {
+    const { shoppingListColl } = await this._getCollections(chatId);
+    const snapshot = await shoppingListColl.get();
     const items = [];
     snapshot.forEach(doc => {
       items.push(doc.data());
@@ -35,20 +50,20 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return items;
   }
 
-  async saveActiveItem(item) {
+  async saveActiveItem(chatId, item) {
     if (!item || !item.name) return;
-    await this._getDb();
+    const { shoppingListColl } = await this._getCollections(chatId);
     const key = (item.canonicalName || item.normalizedName || item.name).trim().toLowerCase();
     const data = {
       ...item,
       canonicalName: key
     };
-    await this.shoppingListColl.doc(key).set(data, { merge: true });
+    await shoppingListColl.doc(key).set(data, { merge: true });
   }
 
-  async deleteActiveItems() {
-    await this._getDb();
-    const snapshot = await this.shoppingListColl.get();
+  async deleteActiveItems(chatId) {
+    const { shoppingListColl } = await this._getCollections(chatId);
+    const snapshot = await shoppingListColl.get();
     if (snapshot.empty) return 0;
 
     const batch = this.db.batch();
@@ -59,11 +74,11 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return snapshot.size;
   }
 
-  async deleteActiveItem(itemName) {
+  async deleteActiveItem(chatId, itemName) {
     if (!itemName || typeof itemName !== 'string') return false;
-    await this._getDb();
+    const { shoppingListColl } = await this._getCollections(chatId);
     const key = itemName.trim().toLowerCase();
-    const docRef = this.shoppingListColl.doc(key);
+    const docRef = shoppingListColl.doc(key);
     const doc = await docRef.get();
     if (doc.exists) {
       await docRef.delete();
@@ -72,32 +87,32 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return false;
   }
 
-  async getHabit(itemName) {
+  async getHabit(chatId, itemName) {
     if (!itemName || typeof itemName !== 'string') return null;
-    await this._getDb();
+    const { habitsColl } = await this._getCollections(chatId);
     const key = itemName.trim().toLowerCase();
-    const doc = await this.habitsColl.doc(key).get();
+    const doc = await habitsColl.doc(key).get();
     if (!doc.exists) return null;
     return doc.data();
   }
 
-  async saveHabit(habit) {
+  async saveHabit(chatId, habit) {
     if (!habit || !habit.itemName) return;
-    await this._getDb();
+    const { habitsColl } = await this._getCollections(chatId);
     const key = habit.itemName.trim().toLowerCase();
-    await this.habitsColl.doc(key).set(habit, { merge: true });
+    await habitsColl.doc(key).set(habit, { merge: true });
   }
 
-  async savePurchaseHistory(record) {
+  async savePurchaseHistory(chatId, record) {
     if (!record) return;
-    await this._getDb();
+    const { historyColl } = await this._getCollections(chatId);
     const docId = record.id || `reset_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    await this.historyColl.doc(docId).set(record);
+    await historyColl.doc(docId).set(record);
   }
 
-  async getPurchaseHistory() {
-    await this._getDb();
-    const snapshot = await this.historyColl.get();
+  async getPurchaseHistory(chatId) {
+    const { historyColl } = await this._getCollections(chatId);
+    const snapshot = await historyColl.get();
     const history = [];
     snapshot.forEach(doc => {
       history.push(doc.data());
@@ -105,9 +120,9 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return history;
   }
 
-  async getAllHabits() {
-    await this._getDb();
-    const snapshot = await this.habitsColl.get();
+  async getAllHabits(chatId) {
+    const { habitsColl } = await this._getCollections(chatId);
+    const snapshot = await habitsColl.get();
     const habits = [];
     snapshot.forEach(doc => {
       habits.push(doc.data());
@@ -115,8 +130,9 @@ export class FirestoreAdapter extends DatabaseAdapter {
     return habits;
   }
 
-  async clearAllData() {
-    await this._getDb();
+  async clearAllData(chatId) {
+    const { shoppingListColl, habitsColl, historyColl } = await this._getCollections(chatId);
+    
     const deleteColl = async (collRef) => {
       const snapshot = await collRef.get();
       if (snapshot.empty) return;
@@ -125,8 +141,8 @@ export class FirestoreAdapter extends DatabaseAdapter {
       await batch.commit();
     };
 
-    await deleteColl(this.shoppingListColl);
-    await deleteColl(this.habitsColl);
-    await deleteColl(this.historyColl);
+    await deleteColl(shoppingListColl);
+    await deleteColl(habitsColl);
+    await deleteColl(historyColl);
   }
 }

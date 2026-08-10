@@ -3,105 +3,105 @@ import { DatabaseAdapter } from './DatabaseAdapter.js';
 export class MockDatabaseAdapter extends DatabaseAdapter {
   constructor(initialData = {}) {
     super();
-    /** @type {Array<Object>} */
-    this.activeItems = [];
-    /** @type {Map<string, Object>} */
-    this.habits = new Map();
-    /** @type {Array<Object>} */
-    this.purchaseHistory = [];
+    this.activeItems = {}; // { chatId: [] }
+    this.habits = {}; // { chatId: Map }
+    this.history = {}; // { chatId: [] }
 
-    if (initialData.activeItems) {
-      this.activeItems = initialData.activeItems.map(item => ({ ...item }));
-    }
-    if (initialData.habits) {
-      for (const habit of initialData.habits) {
-        if (habit && habit.itemName) {
-          const key = habit.itemName.trim().toLowerCase();
-          this.habits.set(key, JSON.parse(JSON.stringify(habit)));
-        }
-      }
-    }
-    if (initialData.purchaseHistory) {
-      this.purchaseHistory = JSON.parse(JSON.stringify(initialData.purchaseHistory));
-    }
+    // initialData ignoring for now as it's legacy non-chatId based,
+    // or we could adapt it if needed, but for mock it's fine.
   }
 
-  async getActiveItems() {
-    return this.activeItems.map(item => ({ ...item }));
+  _getChatItems(chatId) {
+    if (!this.activeItems[chatId]) this.activeItems[chatId] = [];
+    return this.activeItems[chatId];
   }
 
-  async saveActiveItem(item) {
-    if (!item || !item.name) return;
-    const cleanName = item.name.trim().toLowerCase();
-    const existingIndex = this.activeItems.findIndex(
-      i => (i.canonicalName && i.canonicalName === cleanName) || i.name.trim().toLowerCase() === cleanName
-    );
+  _getChatHabits(chatId) {
+    if (!this.habits[chatId]) this.habits[chatId] = new Map();
+    return this.habits[chatId];
+  }
 
-    const cloned = JSON.parse(JSON.stringify(item));
-    if (!cloned.canonicalName) {
-      cloned.canonicalName = cleanName;
-    }
+  _getChatHistory(chatId) {
+    if (!this.history[chatId]) this.history[chatId] = [];
+    return this.history[chatId];
+  }
 
+  async getActiveItems(chatId) {
+    if (!chatId) return [];
+    return [...this._getChatItems(chatId)];
+  }
+
+  async saveActiveItem(chatId, item) {
+    if (!chatId || !item || !item.name) return;
+    const items = this._getChatItems(chatId);
+    const key = (item.canonicalName || item.name).trim().toLowerCase();
+    const existingIndex = items.findIndex(i => (i.canonicalName || i.name.toLowerCase()) === key);
+    
     if (existingIndex >= 0) {
-      this.activeItems[existingIndex] = {
-        ...this.activeItems[existingIndex],
-        ...cloned
-      };
+      items[existingIndex] = { ...items[existingIndex], ...item, canonicalName: key };
     } else {
-      this.activeItems.push(cloned);
+      items.push({ ...item, canonicalName: key });
     }
   }
 
-  async deleteActiveItems() {
-    const count = this.activeItems.length;
-    this.activeItems = [];
+  async deleteActiveItems(chatId) {
+    if (!chatId) return 0;
+    const items = this._getChatItems(chatId);
+    const count = items.length;
+    this.activeItems[chatId] = [];
     return count;
   }
 
-  async deleteActiveItem(itemName) {
-    if (!itemName) return false;
+  async deleteActiveItem(chatId, itemName) {
+    if (!chatId || !itemName) return false;
     const key = itemName.trim().toLowerCase();
-    const initialLength = this.activeItems.length;
-    this.activeItems = this.activeItems.filter(i => i.canonicalName !== key && i.name.toLowerCase() !== key);
-    return this.activeItems.length < initialLength;
+    const items = this._getChatItems(chatId);
+    const initialLength = items.length;
+    this.activeItems[chatId] = items.filter(i => (i.canonicalName !== key && i.name.toLowerCase() !== key));
+    return this.activeItems[chatId].length < initialLength;
   }
 
-  async getHabit(itemName) {
-    if (!itemName || typeof itemName !== 'string') return null;
+  async getHabit(chatId, itemName) {
+    if (!chatId || !itemName || typeof itemName !== 'string') return null;
     const key = itemName.trim().toLowerCase();
-    const habit = this.habits.get(key);
-    return habit ? JSON.parse(JSON.stringify(habit)) : null;
+    const habits = this._getChatHabits(chatId);
+    return habits.get(key) || null;
   }
 
-  async saveHabit(habit) {
-    if (!habit || !habit.itemName) return;
+  async saveHabit(chatId, habit) {
+    if (!chatId || !habit || !habit.itemName) return;
     const key = habit.itemName.trim().toLowerCase();
-    const cloned = JSON.parse(JSON.stringify(habit));
-    this.habits.set(key, cloned);
+    const habits = this._getChatHabits(chatId);
+    const existing = habits.get(key) || {};
+    habits.set(key, { ...existing, ...habit });
   }
 
-  async savePurchaseHistory(record) {
-    if (!record) return;
-    this.purchaseHistory.push(JSON.parse(JSON.stringify(record)));
+  async savePurchaseHistory(chatId, record) {
+    if (!chatId || !record) return;
+    const history = this._getChatHistory(chatId);
+    history.push(record);
   }
 
-  async getPurchaseHistory() {
-    return JSON.parse(JSON.stringify(this.purchaseHistory));
+  async getPurchaseHistory(chatId) {
+    if (!chatId) return [];
+    return [...this._getChatHistory(chatId)];
   }
 
-  async getAllHabits() {
-    return Array.from(this.habits.values()).map(h => JSON.parse(JSON.stringify(h)));
+  async getAllHabits(chatId) {
+    if (!chatId) return [];
+    const habits = this._getChatHabits(chatId);
+    return Array.from(habits.values());
   }
 
-  async clearAllData() {
-    this.activeItems = [];
-    this.habits.clear();
-    this.purchaseHistory = [];
-  }
-
-  clear() {
-    this.activeItems = [];
-    this.habits.clear();
-    this.purchaseHistory = [];
+  async clearAllData(chatId) {
+    if (chatId) {
+      this.activeItems[chatId] = [];
+      this.habits[chatId] = new Map();
+      this.history[chatId] = [];
+    } else {
+      this.activeItems = {};
+      this.habits = {};
+      this.history = {};
+    }
   }
 }

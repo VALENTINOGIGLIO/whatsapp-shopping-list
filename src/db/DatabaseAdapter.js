@@ -2,79 +2,47 @@
  * Abstract Base Database Adapter Interface
  */
 export class DatabaseAdapter {
-  /**
-   * Retrieves all active shopping list items.
-   * @returns {Promise<Array<Object>>}
-   */
-  async getActiveItems() {
+  async getActiveItems(chatId) {
     throw new Error('DatabaseAdapter.getActiveItems() must be implemented by subclass.');
   }
 
-  /**
-   * Saves or updates an active shopping list item.
-   * @param {Object} item
-   * @returns {Promise<void>}
-   */
-  async saveActiveItem(item) {
+  async saveActiveItem(chatId, item) {
     throw new Error('DatabaseAdapter.saveActiveItem() must be implemented by subclass.');
   }
 
-  /**
-   * Clears all active shopping list items.
-   * @returns {Promise<number>} Number of items deleted.
-   */
-  async deleteActiveItems() {
+  async deleteActiveItems(chatId) {
     throw new Error('DatabaseAdapter.deleteActiveItems() must be implemented by subclass.');
   }
 
-  /**
-   * Retrieves habit tracking record for a specific item name.
-   * @param {string} itemName
-   * @returns {Promise<Object|null>}
-   */
-  async getHabit(itemName) {
+  async deleteActiveItem(chatId, itemName) {
+    throw new Error('DatabaseAdapter.deleteActiveItem() must be implemented by subclass.');
+  }
+
+  async getHabit(chatId, itemName) {
     throw new Error('DatabaseAdapter.getHabit() must be implemented by subclass.');
   }
 
-  /**
-   * Saves or updates a habit record.
-   * @param {Object} habit
-   * @returns {Promise<void>}
-   */
-  async saveHabit(habit) {
+  async saveHabit(chatId, habit) {
     throw new Error('DatabaseAdapter.saveHabit() must be implemented by subclass.');
   }
 
-  /**
-   * Persists a purchase history journal record.
-   * @param {Object} record
-   * @returns {Promise<void>}
-   */
-  async savePurchaseHistory(record) {
+  async savePurchaseHistory(chatId, record) {
     throw new Error('DatabaseAdapter.savePurchaseHistory() must be implemented by subclass.');
   }
 
-  /**
-   * Retrieves all recorded purchase history items.
-   * @returns {Promise<Array<Object>>}
-   */
-  async getPurchaseHistory() {
+  async getPurchaseHistory(chatId) {
     throw new Error('DatabaseAdapter.getPurchaseHistory() must be implemented by subclass.');
   }
 
-  /**
-   * Resets all database collections / data structures.
-   * @returns {Promise<void>}
-   */
-  async clearAllData() {
+  async getAllHabits(chatId) {
+    throw new Error('DatabaseAdapter.getAllHabits() must be implemented by subclass.');
+  }
+
+  async clearAllData(chatId) {
     throw new Error('DatabaseAdapter.clearAllData() must be implemented by subclass.');
   }
 
-  /**
-   * Alias for clearAllData.
-   * @returns {Promise<void>}
-   */
-  async clear() {
-    return await this.clearAllData();
+  async clear(chatId) {
+    return await this.clearAllData(chatId);
   }
 }

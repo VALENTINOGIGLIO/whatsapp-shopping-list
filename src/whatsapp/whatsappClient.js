@@ -102,33 +102,33 @@ export class WhatsAppClientWrapper {
           }
 
           if (commandText === 'lista') {
-            const items = await this.shoppingListService.getList();
+            const items = await this.shoppingListService.getList(remoteJid);
             response = this.shoppingListService.formatListForDisplay(items);
           } else if (commandText === 'lista supermercati' || commandText === 'lista supermercato') {
-            const items = await this.shoppingListService.getList();
+            const items = await this.shoppingListService.getList(remoteJid);
             response = this.shoppingListService.formatListGroupedByStore(items);
           } else if (commandText.startsWith('reset')) {
             const store = commandText.replace(/^reset\s*/, '').trim() || null;
-            const result = await this.shoppingListService.resetList(store, remoteJid);
+            const result = await this.shoppingListService.resetList(remoteJid, store, remoteJid);
             response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
           } else if (commandText.startsWith('cancella ') || commandText.startsWith('cancella-')) {
             const item = commandText.replace(/^cancella[-\s]+/, '').trim();
             if (item) {
-              const removed = await this.shoppingListService.removeItem(item);
+              const removed = await this.shoppingListService.removeItem(remoteJid, item);
               if (removed) reaction = '✅';
               else response = `❌ Articolo "${item}" non trovato nella lista.`;
             }
           } else if (commandText.startsWith('spunta ')) {
             const item = commandText.replace(/^spunta\s+/, '').trim();
             if (item) {
-              const updated = await this.shoppingListService.markItemStatus(item, { isChecked: true });
+              const updated = await this.shoppingListService.markItemStatus(remoteJid, item, { isChecked: true });
               if (updated) reaction = '✅';
               else response = `❌ Articolo "${item}" non trovato nella lista.`;
             }
           } else if (commandText.startsWith('urgente ')) {
             const item = commandText.replace(/^urgente\s+/, '').trim();
             if (item) {
-              const updated = await this.shoppingListService.markItemStatus(item, { isUrgent: true });
+              const updated = await this.shoppingListService.markItemStatus(remoteJid, item, { isUrgent: true });
               if (updated) reaction = '✅';
               else response = `❌ Articolo "${item}" non trovato nella lista.`;
             }
@@ -167,7 +167,7 @@ export class WhatsAppClientWrapper {
               }
               
               if (item) {
-                await this.shoppingListService.addItem(item, store, remoteJid);
+                await this.shoppingListService.addItem(remoteJid, item, store, remoteJid);
                 reaction = '✅';
               }
             }
