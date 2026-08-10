@@ -193,7 +193,20 @@ export class WhatsAppClientWrapper {
               }
               
               if (item) {
+                // Check for "urgente" inline
+                let isUrgent = false;
+                const urgentRegex = /(?:^|\s)urgente(?:$|\s)/i;
+                if (urgentRegex.test(item)) {
+                  isUrgent = true;
+                  item = item.replace(urgentRegex, ' ').trim();
+                  // In case there's multiple spaces left behind
+                  item = item.replace(/\s+/g, ' ');
+                }
+
                 await this.shoppingListService.addItem(remoteJid, item, store, remoteJid);
+                if (isUrgent) {
+                  await this.shoppingListService.markItemStatus(remoteJid, item, { isUrgent: true });
+                }
                 reaction = '✅';
               }
             }
