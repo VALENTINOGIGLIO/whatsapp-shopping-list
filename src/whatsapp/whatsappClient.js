@@ -1,5 +1,6 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
+import puppeteer from 'puppeteer';
 import qrcodeTerminal from 'qrcode-terminal';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -36,6 +37,7 @@ export class WhatsAppClientWrapper {
     } else {
       const puppeteerArgs = options.puppeteerOptions || options.puppeteer || {
         headless: true,
+        executablePath: puppeteer.executablePath(),
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       };
 
