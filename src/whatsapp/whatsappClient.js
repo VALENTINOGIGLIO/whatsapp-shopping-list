@@ -133,11 +133,30 @@ export class WhatsAppClientWrapper {
               else response = `❌ Articolo "${item}" non trovato nella lista.`;
             }
           } else if (commandText.startsWith('urgente ')) {
-            const item = commandText.replace(/^urgente\s+/, '').trim();
-            if (item) {
-              const updated = await this.shoppingListService.markItemStatus(remoteJid, item, { isUrgent: true });
-              if (updated) reaction = '✅';
-              else response = `❌ Articolo "${item}" non trovato nella lista.`;
+            const rawItem = commandText.replace(/^urgente\s+/, '').trim();
+            if (rawItem) {
+              // Try parsing " da " first so markItemStatus gets the correct name
+              let itemName = rawItem;
+              let store = null;
+              const daIndex = rawItem.lastIndexOf(' da ');
+              if (daIndex !== -1) {
+                itemName = rawItem.substring(0, daIndex).trim();
+                store = rawItem.substring(daIndex + 4).trim();
+              }
+
+              const updated = await this.shoppingListService.markItemStatus(remoteJid, itemName, { isUrgent: true });
+              if (updated) {
+                // If it already existed but store was provided, let's update the store/habit via addItem
+                if (store) {
+                  await this.shoppingListService.addItem(remoteJid, itemName, store, remoteJid);
+                }
+                reaction = '✅';
+              } else {
+                // Not found, add it now
+                await this.shoppingListService.addItem(remoteJid, itemName, store, remoteJid);
+                await this.shoppingListService.markItemStatus(remoteJid, itemName, { isUrgent: true });
+                reaction = '✅';
+              }
             }
           } else if (commandText === 'aiuto' || commandText === 'help') {
             response = '🤖 *Comandi Bot Spesa:*\n' +
