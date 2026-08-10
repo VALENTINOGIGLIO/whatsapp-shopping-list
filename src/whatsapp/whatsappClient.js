@@ -1,7 +1,3 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
-import pino from 'pino';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { MessageParser } from '../domain/MessageParser.js';
 import { CommandType } from '../domain/CommandType.js';
 import { startWebServer } from '../web/server.js';
@@ -10,118 +6,56 @@ import { MockDatabaseAdapter } from '../db/MockDatabaseAdapter.js';
 import { HabitTracker } from '../domain/HabitTracker.js';
 import { ShoppingListService } from '../domain/ShoppingListService.js';
 import { WhatsAppBroadcaster } from '../broadcaster/WhatsAppBroadcaster.js';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 export class WhatsAppClientWrapper {
   constructor(options = {}) {
     this.service = options.service || null;
-    this.status = 'INITIALIZING';
-    this.qrCode = null;
-    this.pairingCode = null;
-    this.lastQrTimestamp = null;
+    this.token = process.env.WHATSAPP_TOKEN || null;
+    this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || null;
+    this.verifyToken = process.env.WEBHOOK_VERIFY_TOKEN || 'shopping-list-secret';
     this.lastTargetChatId = process.env.WHATSAPP_FAMILY_CHAT_ID || null;
-    this.dataPath = options.dataPath || './auth_info_baileys';
     this.allowSelfMessages = options.allowSelfMessages || false;
-    this.sock = null;
   }
 
   async initialize() {
-    console.log('🔄 [Baileys] Starting initialization...');
-    const { state, saveCreds } = await useMultiFileAuthState(this.dataPath);
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`[Baileys] using WA v${version.join('.')}, isLatest: ${isLatest}`);
-
-    const logger = pino({ level: 'silent' });
-
-    this.sock = makeWASocket({
-      version,
-      logger,
-      printQRInTerminal: true,
-      auth: state,
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
-    });
-
-    this.sock.ev.on('creds.update', saveCreds);
-
-    this.sock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      if (qr) {
-        this.qrCode = qr;
-        this.pairingCode = null;
-        this.status = 'QR_READY';
-        this.lastQrTimestamp = Date.now();
-        console.log('📱 [Baileys] New QR code generated.');
-      }
-
-      if (connection === 'close') {
-        this.status = 'DISCONNECTED';
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.warn('⚠️ [Baileys] Connection closed due to', lastDisconnect?.error, ', reconnecting:', shouldReconnect);
-        if (shouldReconnect) {
-          this.initialize();
-        } else {
-          console.log('❌ [Baileys] Logged out from WhatsApp.');
-        }
-      } else if (connection === 'open') {
-        this.status = 'READY';
-        this.qrCode = null;
-        this.pairingCode = null;
-        console.log('🚀 [Baileys] Client is READY and Connected!');
-      }
-    });
-
-    this.sock.ev.on('messages.upsert', async (m) => {
-      if (m.type !== 'notify') return;
-      for (const msg of m.messages) {
-        if (!msg.message) continue;
-        await this.handleIncomingMessage(msg);
-      }
-    });
+    if (!this.token || !this.phoneNumberId) {
+      console.warn('⚠️ [Meta API] Missing WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID in environment.');
+    } else {
+      console.log('🚀 [Meta API] Client is configured and READY!');
+    }
   }
 
   async destroy() {
-    if (this.sock) {
-      this.sock.logout();
-      this.sock.end(undefined);
-    }
+    // No persistent connection to close
   }
 
   getQrCode() {
-    return this.qrCode;
+    return null; // Not applicable for Meta API
   }
 
   getPairingCode() {
-    return this.pairingCode;
+    return null; // Not applicable for Meta API
   }
 
-  async requestPairingCode(phoneNumber) {
-    if (!this.sock) {
-      throw new Error('Socket not initialized');
-    }
-    
-    // Baileys pairing code
-    if (!this.sock.authState.creds.registered) {
-      // Small delay required by Baileys
-      await new Promise(r => setTimeout(r, 1000));
-      const code = await this.sock.requestPairingCode(phoneNumber);
-      this.pairingCode = code;
-      this.qrCode = null;
-      return code;
-    } else {
-      throw new Error('Already registered/authenticated');
-    }
+  async requestPairingCode() {
+    throw new Error('Pairing code not applicable for Meta API');
   }
 
   getStatus() {
-    return this.status;
+    if (!this.token || !this.phoneNumberId) {
+      return 'MISSING_CONFIG';
+    }
+    return 'READY';
   }
 
   isReady() {
-    return this.status === 'READY';
+    return this.getStatus() === 'READY';
   }
 
   getClient() {
-    return this.sock;
+    return this; // Return self to simulate client
   }
 
   getLastTargetChatId() {
@@ -132,29 +66,59 @@ export class WhatsAppClientWrapper {
     this.lastTargetChatId = chatId;
   }
 
-  async handleIncomingMessage(msg) {
-    const isFromMe = msg.key.fromMe;
-    if (isFromMe && !this.allowSelfMessages) return null;
+  async sendMessage(to, text) {
+    if (!this.token || !this.phoneNumberId) {
+      console.error('❌ [Meta API] Cannot send message: Missing configuration.');
+      return;
+    }
 
-    // Extract text from various Baileys message types
-    const text = msg.message?.conversation || 
-                 msg.message?.extendedTextMessage?.text || 
-                 '';
+    try {
+      const response = await fetch(`https://graph.facebook.com/v19.0/${this.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: to,
+          type: 'text',
+          text: { body: text }
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.text();
+        console.error('❌ [Meta API] Send message failed:', response.status, errData);
+      }
+    } catch (err) {
+      console.error('❌ [Meta API] Error sending message:', err);
+    }
+  }
+
+  async handleIncomingWebhook(body) {
+    if (!body.entry || !body.entry[0] || !body.entry[0].changes || !body.entry[0].changes[0].value.messages) {
+      return; // Not a message event
+    }
+
+    const messagePayload = body.entry[0].changes[0].value.messages[0];
+    const contactPayload = body.entry[0].changes[0].value.contacts?.[0];
     
-    if (!text) return null;
+    if (messagePayload.type !== 'text') return; // We only handle text for now
 
-    const from = msg.key.remoteJid;
+    const from = messagePayload.from; // Phone number
+    const text = messagePayload.text.body;
+    const sender = contactPayload?.profile?.name || from || 'user1';
+
     if (from) {
       this.lastTargetChatId = from;
     }
 
-    const sender = msg.pushName || from.split('@')[0] || 'user1';
-
     const parsed = MessageParser.parse(text);
 
     if (!this.service) {
-      console.warn('⚠️ [WhatsApp] ShoppingListService not attached.');
-      return null;
+      console.warn('⚠️ [Meta API] ShoppingListService not attached.');
+      return;
     }
 
     let replyText = '';
@@ -207,17 +171,15 @@ export class WhatsAppClientWrapper {
       }
 
       if (from) {
-        await this.sock.sendMessage(from, { text: replyText }, { quoted: msg });
+        await this.sendMessage(from, replyText);
       }
     } catch (err) {
-      console.error('❌ [WhatsApp] Error processing message:', err);
+      console.error('❌ [Meta API] Error processing message:', err);
       replyText = `⚠️ Si è verificato un errore: ${err.message || err}`;
       if (from) {
-        await this.sock.sendMessage(from, { text: replyText });
+        await this.sendMessage(from, replyText);
       }
     }
-
-    return replyText;
   }
 }
 
@@ -234,22 +196,17 @@ if (executedPath && (currentFilePath === executedPath || executedPath.endsWith('
 
   const clientWrapper = new WhatsAppClientWrapper({ service });
   
-  // Custom patch for broadcaster to work with Baileys
+  // Custom patch for broadcaster to work with Meta API
   broadcaster.client = {
     sendMessage: async (chatId, message) => {
-      if (clientWrapper.sock) {
-        await clientWrapper.sock.sendMessage(chatId, { text: message });
-      }
+      await clientWrapper.sendMessage(chatId, message);
     }
   };
 
   const port = process.env.PORT || 3000;
   startWebServer({ port, whatsappClient: clientWrapper }).then(() => {
     console.log(`🌐 [Web Server] Started on port ${port}`);
-    return clientWrapper.initialize().catch((err) => {
-      clientWrapper.status = 'INITIALIZE_FAILED';
-      console.error('❌ [WhatsApp] Client initialization failed:', err);
-    });
+    return clientWrapper.initialize();
   }).catch((err) => {
     console.error('❌ Failed to start application:', err);
     process.exit(1);
