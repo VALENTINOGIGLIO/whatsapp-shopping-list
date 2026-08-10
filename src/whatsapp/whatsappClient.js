@@ -68,9 +68,31 @@ export class WhatsAppClientWrapper {
       const remoteJid = msg.key.remoteJid;
       const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-      if (!text) return;
+      const lower = text.trim().toLowerCase();
+      let response = '';
 
-      const response = await this.shoppingListService.processMessage(text, remoteJid);
+      try {
+        if (lower === 'lista') {
+          const items = await this.shoppingListService.getList();
+          response = this.shoppingListService.formatListForDisplay(items);
+        } else if (lower.startsWith('reset')) {
+          const parts = lower.split(' ');
+          parts.shift();
+          const store = parts.join(' ').trim() || null;
+          const result = await this.shoppingListService.resetList(store, remoteJid);
+          response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
+        } else {
+          const parts = lower.split(' ');
+          const item = parts[0];
+          parts.shift();
+          const store = parts.join(' ').trim() || null;
+          const result = await this.shoppingListService.addItem(item, store, remoteJid);
+          response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+        }
+      } catch (err) {
+        console.error('Error processing message:', err);
+        response = '❌ Errore durante l\'elaborazione del messaggio.';
+      }
       
       if (response) {
         await this.sock.sendMessage(remoteJid, { text: response });
@@ -84,3 +106,26 @@ export class WhatsAppClientWrapper {
 }
 
 export const whatsappClient = new WhatsAppClientWrapper();
+
+import { createWebServer } from '../web/server.js';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const isMainModule = (metaUrl) => {
+  if (!metaUrl) return false;
+  const currentFilePath = fileURLToPath(metaUrl);
+  const executedPath = fs.realpathSync(process.argv[1]);
+  return currentFilePath === executedPath;
+};
+
+if (isMainModule(import.meta.url)) {
+  const port = process.env.PORT || 3000;
+  const app = createWebServer({ whatsappClient });
+  
+  app.listen(port, () => {
+    console.log(`🌐 [Web Server] Started on port ${port}`);
+    whatsappClient.initialize().catch(err => {
+      console.error('❌ Failed to start WhatsApp Client:', err);
+    });
+  });
+}
