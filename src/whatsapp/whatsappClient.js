@@ -11,6 +11,7 @@ export class WhatsAppClientWrapper {
     this.shoppingListService = new ShoppingListService(dbAdapter);
     this.sock = null;
     this.qrCodeDataURL = null;
+    this.activeSessions = new Set();
   }
 
   async initialize() {
@@ -68,40 +69,71 @@ export class WhatsAppClientWrapper {
       const remoteJid = msg.key.remoteJid;
       const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-      const lower = text.trim().toLowerCase();
-      
-      // SICUREZZA: Ignora tutti i messaggi che non iniziano con "!" 
-      // per evitare che il bot risponda a chat personali normali.
-      if (!lower.startsWith('!')) return;
+      if (!text) return;
 
-      const commandText = lower.substring(1).trim(); // Rimuove il "!"
+      const lower = text.trim().toLowerCase();
       let response = '';
 
       try {
-        if (commandText === 'lista') {
-          const items = await this.shoppingListService.getList();
-          response = this.shoppingListService.formatListForDisplay(items);
-        } else if (commandText.startsWith('reset')) {
-          const parts = commandText.split(' ');
-          parts.shift(); // remove 'reset'
-          const store = parts.join(' ').trim() || null;
-          const result = await this.shoppingListService.resetList(store, remoteJid);
-          response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
-        } else if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
-          const parts = commandText.split(' ');
-          parts.shift(); // remove 'aggiungi' or 'spesa'
-          const item = parts[0];
-          parts.shift();
-          const store = parts.join(' ').trim() || null;
-          
-          if (!item) {
-             response = '❌ Specifica cosa aggiungere (es. !spesa latte)';
+        if (lower === '/avvia') {
+          this.activeSessions.add(remoteJid);
+          response = '🟢 Modalità Spesa ATTIVATA in questa chat.\nOra tutto quello che scrivi verrà aggiunto direttamente alla lista! (Scrivi /ferma per disabilitare)';
+        } else if (lower === '/ferma') {
+          this.activeSessions.delete(remoteJid);
+          response = '🔴 Modalità Spesa DISATTIVATA in questa chat.\nI messaggi normali verranno di nuovo ignorati.';
+        } else if (this.activeSessions.has(remoteJid)) {
+          // Modalità sessione attiva: prende ogni messaggio come comando o articolo
+          if (lower === 'lista') {
+            const items = await this.shoppingListService.getList();
+            response = this.shoppingListService.formatListForDisplay(items);
+          } else if (lower.startsWith('reset')) {
+            const parts = lower.split(' ');
+            parts.shift();
+            const store = parts.join(' ').trim() || null;
+            const result = await this.shoppingListService.resetList(store, remoteJid);
+            response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
           } else {
-             const result = await this.shoppingListService.addItem(item, store, remoteJid);
-             response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+            // Aggiunta automatica dell'articolo
+            const parts = lower.split(' ');
+            const item = parts[0];
+            parts.shift();
+            const store = parts.join(' ').trim() || null;
+            
+            if (item) {
+               const result = await this.shoppingListService.addItem(item, store, remoteJid);
+               response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+            }
           }
         } else {
-          response = '🤖 Comandi bot spesa:\n- !spesa [oggetto] [negozio]\n- !lista\n- !reset [negozio]';
+          // Modalità classica: richiede il prefisso "!" per non intralciare la chat
+          if (!lower.startsWith('!')) return;
+
+          const commandText = lower.substring(1).trim();
+          if (commandText === 'lista') {
+            const items = await this.shoppingListService.getList();
+            response = this.shoppingListService.formatListForDisplay(items);
+          } else if (commandText.startsWith('reset')) {
+            const parts = commandText.split(' ');
+            parts.shift();
+            const store = parts.join(' ').trim() || null;
+            const result = await this.shoppingListService.resetList(store, remoteJid);
+            response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
+          } else if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
+            const parts = commandText.split(' ');
+            parts.shift();
+            const item = parts[0];
+            parts.shift();
+            const store = parts.join(' ').trim() || null;
+            
+            if (!item) {
+               response = '❌ Specifica cosa aggiungere (es. !spesa latte)';
+            } else {
+               const result = await this.shoppingListService.addItem(item, store, remoteJid);
+               response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+            }
+          } else {
+            response = '🤖 Comandi bot spesa:\n- /avvia (attiva l\'inserimento rapido)\n- !spesa [oggetto] [negozio]\n- !lista\n- !reset [negozio]';
+          }
         }
       } catch (err) {
         console.error('Error processing message:', err);
