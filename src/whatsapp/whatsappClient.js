@@ -69,29 +69,43 @@ export class WhatsAppClientWrapper {
       const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
       const lower = text.trim().toLowerCase();
+      
+      // SICUREZZA: Ignora tutti i messaggi che non iniziano con "!" 
+      // per evitare che il bot risponda a chat personali normali.
+      if (!lower.startsWith('!')) return;
+
+      const commandText = lower.substring(1).trim(); // Rimuove il "!"
       let response = '';
 
       try {
-        if (lower === 'lista') {
+        if (commandText === 'lista') {
           const items = await this.shoppingListService.getList();
           response = this.shoppingListService.formatListForDisplay(items);
-        } else if (lower.startsWith('reset')) {
-          const parts = lower.split(' ');
-          parts.shift();
+        } else if (commandText.startsWith('reset')) {
+          const parts = commandText.split(' ');
+          parts.shift(); // remove 'reset'
           const store = parts.join(' ').trim() || null;
           const result = await this.shoppingListService.resetList(store, remoteJid);
           response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
-        } else {
-          const parts = lower.split(' ');
+        } else if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
+          const parts = commandText.split(' ');
+          parts.shift(); // remove 'aggiungi' or 'spesa'
           const item = parts[0];
           parts.shift();
           const store = parts.join(' ').trim() || null;
-          const result = await this.shoppingListService.addItem(item, store, remoteJid);
-          response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+          
+          if (!item) {
+             response = '❌ Specifica cosa aggiungere (es. !spesa latte)';
+          } else {
+             const result = await this.shoppingListService.addItem(item, store, remoteJid);
+             response = `✅ Aggiunto: ${item}${store ? ' (' + store + ')' : ''}`;
+          }
+        } else {
+          response = '🤖 Comandi bot spesa:\n- !spesa [oggetto] [negozio]\n- !lista\n- !reset [negozio]';
         }
       } catch (err) {
         console.error('Error processing message:', err);
-        response = '❌ Errore durante l\'elaborazione del messaggio.';
+        response = '❌ Errore durante l\'elaborazione del comando.';
       }
       
       if (response) {
