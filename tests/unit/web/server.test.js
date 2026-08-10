@@ -102,4 +102,22 @@ describe('Unit Test: Express Web Server (src/web/server.js)', () => {
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('location'), '/qr');
   });
+
+  it('GET /health responds with 200 OK when client status is INITIALIZE_FAILED', async () => {
+    const { server } = await startWebServer(0, {
+      getStatus: () => 'INITIALIZE_FAILED'
+    });
+    serverInstance = server;
+
+    const address = server.address();
+    const port = address.port;
+
+    const response = await fetch(`http://localhost:${port}/health`);
+    assert.equal(response.status, 200);
+
+    const data = await response.json();
+    assert.equal(data.status, 'ok');
+    assert.equal(data.whatsappStatus, 'INITIALIZE_FAILED');
+  });
 });
+

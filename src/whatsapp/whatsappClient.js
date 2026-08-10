@@ -35,10 +35,19 @@ export class WhatsAppClientWrapper {
     if (options.client) {
       this.client = options.client;
     } else {
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || (puppeteer.executablePath ? puppeteer.executablePath() : undefined);
       const puppeteerArgs = options.puppeteerOptions || options.puppeteer || {
         headless: true,
-        executablePath: puppeteer.executablePath(),
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        executablePath,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--no-first-run',
+          '--no-zygote'
+        ]
       };
 
       this.client = new Client({
@@ -215,10 +224,14 @@ export class WhatsAppClientWrapper {
     } catch (err) {
       console.error('❌ [WhatsApp] Error processing message:', err);
       replyText = `⚠️ Si è verificato un errore: ${err.message || err}`;
-      if (typeof msg.reply === 'function') {
-        await msg.reply(replyText);
-      } else if (this.client && typeof this.client.sendMessage === 'function' && msg.from) {
-        await this.client.sendMessage(msg.from, replyText);
+      try {
+        if (typeof msg.reply === 'function') {
+          await msg.reply(replyText);
+        } else if (this.client && typeof this.client.sendMessage === 'function' && msg.from) {
+          await this.client.sendMessage(msg.from, replyText);
+        }
+      } catch (replyErr) {
+        console.error('❌ [WhatsApp] Error sending error reply to user:', replyErr);
       }
     }
 
@@ -243,7 +256,10 @@ if (executedPath && (currentFilePath === executedPath || executedPath.endsWith('
   const port = process.env.PORT || 3000;
   startWebServer({ port, whatsappClient: clientWrapper }).then(() => {
     console.log(`🌐 [Web Server] Started on port ${port}`);
-    return clientWrapper.initialize();
+    return clientWrapper.initialize().catch((err) => {
+      clientWrapper.status = 'INITIALIZE_FAILED';
+      console.error('❌ [WhatsApp] Client initialization failed:', err);
+    });
   }).catch((err) => {
     console.error('❌ Failed to start application:', err);
     process.exit(1);

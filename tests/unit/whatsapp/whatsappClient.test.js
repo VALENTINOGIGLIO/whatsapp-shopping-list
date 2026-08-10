@@ -273,4 +273,32 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     assert.ok(repliedText.includes('Si è verificato un errore'));
     assert.ok(repliedText.includes('Database connection failed'));
   });
+
+  it('handles secondary error gracefully when sending error reply fails', async () => {
+    const mockClient = new MockWhatsAppClient();
+    const failingService = {
+      addItem: async () => {
+        throw new Error('Primary database error');
+      }
+    };
+
+    const wrapper = new WhatsAppClientWrapper({
+      client: mockClient,
+      service: failingService,
+      showTerminalQr: false
+    });
+
+    const mockMsg = {
+      from: '123456789@c.us',
+      fromMe: false,
+      body: 'pane',
+      reply: async () => {
+        throw new Error('Network socket closed during reply');
+      }
+    };
+
+    const resultText = await wrapper.handleIncomingMessage(mockMsg);
+    assert.ok(resultText.includes('Primary database error'));
+  });
 });
+
