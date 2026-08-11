@@ -141,5 +141,27 @@ export function createWebServer(options = {}) {
     `);
   });
 
+  // --- Self-ping Keep-Alive ---
+  // Render free tier spegne il server dopo 15 min di inattività HTTP.
+  // Questo timer fa un ping interno ogni 10 minuti per tenerlo sveglio.
+  app.startKeepAlive = (port) => {
+    const INTERVAL_MS = 10 * 60 * 1000; // 10 minuti
+    const url = process.env.RENDER_EXTERNAL_URL
+      ? `${process.env.RENDER_EXTERNAL_URL}/health`
+      : `http://localhost:${port}/health`;
+
+    setInterval(async () => {
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        console.log(`🏓 [Keep-Alive] Ping OK — uptime: ${Math.floor(data.uptime)}s, WA: ${data.whatsappStatus}`);
+      } catch (err) {
+        console.error('🏓 [Keep-Alive] Ping fallito:', err.message);
+      }
+    }, INTERVAL_MS);
+
+    console.log(`🏓 [Keep-Alive] Auto-ping attivato ogni 10 minuti → ${url}`);
+  };
+
   return app;
 }

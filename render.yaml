@@ -13,3 +13,5 @@ services:
         value: "true"
       - key: NODE_ENV
         value: "production"
+      - key: RENDER_EXTERNAL_URL
+        value: "https://whatsapp-shopping-list.onrender.com"

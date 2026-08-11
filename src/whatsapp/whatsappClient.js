@@ -250,6 +250,7 @@ if (isMainModule(import.meta.url)) {
   
   app.listen(port, () => {
     console.log(`🌐 [Web Server] Started on port ${port}`);
+    app.startKeepAlive(port);
     whatsappClient.initialize().catch(err => {
       console.error('❌ Failed to start WhatsApp Client:', err);
     });
