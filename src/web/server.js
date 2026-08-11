@@ -143,24 +143,35 @@ export function createWebServer(options = {}) {
 
   // --- Self-ping Keep-Alive ---
   // Render free tier spegne il server dopo 15 min di inattività HTTP.
-  // Questo timer fa un ping interno ogni 10 minuti per tenerlo sveglio.
+  // Ping ESTERNO ogni 5 minuti per tenere il servizio SEMPRE sveglio.
   app.startKeepAlive = (port) => {
-    const INTERVAL_MS = 10 * 60 * 1000; // 10 minuti
-    const url = process.env.RENDER_EXTERNAL_URL
-      ? `${process.env.RENDER_EXTERNAL_URL}/health`
-      : `http://localhost:${port}/health`;
+    const INTERVAL_MS = 5 * 60 * 1000; // 5 minuti
+    const EXTERNAL_URL = 'https://whatsapp-shopping-list.onrender.com/health';
+    const LOCAL_URL = `http://localhost:${port}/health`;
 
-    setInterval(async () => {
+    const doPing = async () => {
       try {
-        const res = await fetch(url);
+        // Ping esterno (è quello che conta per Render)
+        const res = await fetch(EXTERNAL_URL);
         const data = await res.json();
-        console.log(`🏓 [Keep-Alive] Ping OK — uptime: ${Math.floor(data.uptime)}s, WA: ${data.whatsappStatus}`);
+        console.log(`🏓 [Keep-Alive] Ping ESTERNO OK — uptime: ${Math.floor(data.uptime)}s, WA: ${data.whatsappStatus}`);
       } catch (err) {
-        console.error('🏓 [Keep-Alive] Ping fallito:', err.message);
+        console.error('🏓 [Keep-Alive] Ping esterno fallito, provo locale:', err.message);
+        try {
+          await fetch(LOCAL_URL);
+          console.log('🏓 [Keep-Alive] Ping locale OK (fallback)');
+        } catch (e) {
+          console.error('🏓 [Keep-Alive] Anche ping locale fallito:', e.message);
+        }
       }
-    }, INTERVAL_MS);
+    };
 
-    console.log(`🏓 [Keep-Alive] Auto-ping attivato ogni 10 minuti → ${url}`);
+    // Primo ping dopo 30 secondi dall'avvio
+    setTimeout(doPing, 30 * 1000);
+    // Poi ogni 5 minuti
+    setInterval(doPing, INTERVAL_MS);
+
+    console.log(`🏓 [Keep-Alive] Auto-ping attivato ogni 5 minuti → ${EXTERNAL_URL}`);
   };
 
   return app;
