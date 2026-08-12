@@ -56,35 +56,30 @@ export function createWebServer(options = {}) {
     }
     try {
       console.log('🔄 [Reconnect] Forzando logout e riconnessione...');
-      if (client.sock) {
-        try { await client.sock.logout(); } catch (e) { console.log('🔄 [Reconnect] Logout error (ignorato):', e.message); }
-        try { client.sock.end(); } catch (e) { /* ignore */ }
-        client.sock = null;
-      }
-      client.qrCodeDataURL = null;
 
-      // Cancella le credenziali auth da Firestore
+      // 1. Cancella TUTTE le credenziali auth da Firestore
       try {
         const db = await client.shoppingListService.db._getDb();
         if (db) {
           const authColl = db.collection('whatsapp_auth');
           const snapshot = await authColl.get();
-          const batch = db.batch();
-          snapshot.docs.forEach(doc => batch.delete(doc.ref));
-          await batch.commit();
-          console.log(`🔄 [Reconnect] Cancellate ${snapshot.size} credenziali auth da Firestore`);
+          if (!snapshot.empty) {
+            // Firestore batch max 500 docs
+            const batchSize = 500;
+            const docs = snapshot.docs;
+            for (let i = 0; i < docs.length; i += batchSize) {
+              const batch = db.batch();
+              docs.slice(i, i + batchSize).forEach(doc => batch.delete(doc.ref));
+              await batch.commit();
+            }
+            console.log(`🔄 [Reconnect] Cancellate ${docs.length} credenziali auth da Firestore`);
+          }
         }
       } catch (e) {
         console.error('🔄 [Reconnect] Errore cancellando auth:', e.message);
       }
 
-      // Riavvia il client
-      setTimeout(() => {
-        client.initialize().catch(err => {
-          console.error('❌ [Reconnect] Errore riavvio:', err);
-        });
-      }, 2000);
-
+      // 2. Manda la risposta PRIMA di killare il processo
       res.set('Content-Type', 'text/html; charset=utf-8');
       res.status(200).send(`
         <!DOCTYPE html>
@@ -92,7 +87,7 @@ export function createWebServer(options = {}) {
           <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta http-equiv="refresh" content="8;url=/qr">
+            <meta http-equiv="refresh" content="15;url=/qr">
             <title>Riconnessione...</title>
             <style>
               body { font-family: system-ui, sans-serif; background: #fff3e0; text-align: center; padding: 50px 20px; }
@@ -103,13 +98,22 @@ export function createWebServer(options = {}) {
           <body>
             <div class="card">
               <h1>🔄 Riconnessione in corso...</h1>
-              <p>Le vecchie credenziali sono state cancellate.</p>
-              <p>Verrai reindirizzato alla pagina QR tra <strong>8 secondi</strong>...</p>
-              <p><a href="/qr">Clicca qui se non vieni reindirizzato</a></p>
+              <p>Le credenziali sono state cancellate.</p>
+              <p>Il server si sta riavviando... Verrai reindirizzato alla pagina QR tra <strong>15 secondi</strong>.</p>
+              <p>Se non appare il QR, ricarica la pagina dopo 30 secondi.</p>
+              <p><a href="/qr">Vai alla pagina QR</a></p>
             </div>
           </body>
         </html>
       `);
+
+      // 3. Killa il processo dopo 2 secondi — Render lo riavvia automaticamente
+      //    Al riavvio, senza credenziali in Firestore, genererà un nuovo QR
+      setTimeout(() => {
+        console.log('🔄 [Reconnect] Killing process — Render lo riavvierà...');
+        process.exit(0);
+      }, 2000);
+
     } catch (err) {
       console.error('❌ [Reconnect] Errore:', err);
       res.status(500).json({ error: err.message });
