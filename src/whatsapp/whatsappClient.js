@@ -90,6 +90,20 @@ export class WhatsAppClientWrapper {
     return null;
   }
 
+  async _sendReply(msg, from, response) {
+    try {
+      if (typeof msg.reply === 'function') {
+        await msg.reply(response);
+      } else if (this.client && typeof this.client.sendMessage === 'function') {
+        await this.client.sendMessage(from, response);
+      } else if (this.sock && typeof this.sock.sendMessage === 'function') {
+        await this.sock.sendMessage(from, { text: response });
+      }
+    } catch (replyErr) {
+      console.error('Error sending reply:', replyErr);
+    }
+  }
+
   async handleIncomingMessage(msg) {
     if (!msg || typeof msg !== 'object') return null;
 
@@ -113,8 +127,36 @@ export class WhatsAppClientWrapper {
 
     let response = '';
 
+    const trimmed = text.trim();
+    const lower = trimmed.toLowerCase();
+
+    if (lower === '/avvia') {
+      this.activeSessions.add(from);
+      const r = '🟢 Modalità Spesa ATTIVATA in questa chat.\nOra tutto quello che scrivi verrà aggiunto direttamente alla lista! (Scrivi /ferma per disabilitare)';
+      await this._sendReply(msg, from, r);
+      return r;
+    } else if (lower === '/ferma') {
+      this.activeSessions.delete(from);
+      const r = '🔴 Modalità Spesa DISATTIVATA in questa chat.\nI messaggi normali verranno di nuovo ignorati.';
+      await this._sendReply(msg, from, r);
+      return r;
+    }
+
+    let isSessionActive = this.activeSessions.has(from);
+    let commandText = text;
+
+    if (!isSessionActive) {
+      if (lower.startsWith('!!')) {
+        commandText = text.substring(2).trim();
+      } else if (lower.startsWith('!')) {
+        commandText = text.substring(1).trim();
+      } else {
+        return null;
+      }
+    }
+
     try {
-      const parsed = MessageParser.parse(text);
+      const parsed = MessageParser.parse(commandText);
 
       if (parsed.command === 'legacy_toggle') {
         response = '🟢 *Novità!* Il bot è stato aggiornato ed è ora **SEMPRE ATTIVO**.\nNon c\'è più bisogno di scrivere /avvia o /ferma.\nScrivi semplicemente il nome del prodotto per aggiungerlo alla lista!';
@@ -166,17 +208,7 @@ export class WhatsAppClientWrapper {
     }
 
     if (response) {
-      try {
-        if (typeof msg.reply === 'function') {
-          await msg.reply(response);
-        } else if (this.client && typeof this.client.sendMessage === 'function') {
-          await this.client.sendMessage(from, response);
-        } else if (this.sock && typeof this.sock.sendMessage === 'function') {
-          await this.sock.sendMessage(from, { text: response });
-        }
-      } catch (replyErr) {
-        console.error('Error sending reply:', replyErr);
-      }
+      await this._sendReply(msg, from, response);
     }
 
     return response;
