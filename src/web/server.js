@@ -269,7 +269,7 @@ export function createWebServer(options = {}) {
 export async function startWebServer(port = 0, options = {}) {
   const app = createWebServer(options);
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => {
+    const server = app.listen(port, '0.0.0.0', () => {
       const addr = server.address();
       const actualPort = typeof addr === 'object' && addr ? addr.port : port;
       resolve({ server, port: actualPort, app });

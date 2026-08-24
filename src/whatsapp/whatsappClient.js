@@ -260,7 +260,7 @@ if (isMainModule(import.meta.url)) {
   const port = process.env.PORT || 3000;
   const app = createWebServer({ whatsappClient });
   
-  app.listen(port, () => {
+  app.listen(port, '0.0.0.0', () => {
     console.log(`🌐 [Web Server] Started on port ${port}`);
     app.startKeepAlive(port);
     whatsappClient.initialize().catch(err => {
