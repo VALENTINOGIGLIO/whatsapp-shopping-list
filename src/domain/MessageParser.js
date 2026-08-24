@@ -25,6 +25,18 @@ export class MessageParser {
     const lower = trimmed.toLowerCase();
 
     // 1. Help Commands
+
+    // 0. Avvia/Ferma Legacy Commands
+    if (lower === '/avvia' || lower === '/ferma') {
+      return {
+        command: 'legacy_toggle',
+        type: CommandType.HELP,
+        raw: text,
+        payload: { rawText: trimmed },
+        isValid: true
+      };
+    }
+
     if (['help', 'aiuto', '?', 'info'].includes(lower)) {
       return {
         command: 'help',

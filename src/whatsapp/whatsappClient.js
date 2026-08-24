@@ -16,7 +16,7 @@ export class WhatsAppClientWrapper {
     this.qrCode = null;
     this.qrCodeDataURL = null;
     this.lastTargetChatId = options.defaultRecipient || 'family_chat';
-    this.allowSelfMessages = Boolean(options.allowSelfMessages);
+    this.allowSelfMessages = true;
     this.showTerminalQr = options.showTerminalQr !== false;
     this.shoppingListService = options.service || options.shoppingListService || new ShoppingListService(new FirestoreAdapter());
     this.sock = null;
@@ -107,7 +107,7 @@ export class WhatsAppClientWrapper {
       return null;
     }
 
-    if (fromMe && /^[✅❌🟢🔴🤖🛒🏪]/.test(text.trim())) {
+    if (fromMe && /^[✅❌🟢🔴🤖🛒🏪📊]/.test(text.trim())) {
       return null;
     }
 
@@ -116,7 +116,9 @@ export class WhatsAppClientWrapper {
     try {
       const parsed = MessageParser.parse(text);
 
-      if (parsed.command === 'help') {
+      if (parsed.command === 'legacy_toggle') {
+        response = '🟢 *Novità!* Il bot è stato aggiornato ed è ora **SEMPRE ATTIVO**.\nNon c\'è più bisogno di scrivere /avvia o /ferma.\nScrivi semplicemente il nome del prodotto per aggiungerlo alla lista!';
+      } else if (parsed.command === 'help') {
         response = '🤖 *WhatsApp Shopping List Bot*\n' +
           '- *Aggiungere un articolo*: scrivi il nome del prodotto (es. "latte", "pane eurospin")\n' +
           '- *Visualizzare lista*: scrivi "lista" o "list"\n' +
