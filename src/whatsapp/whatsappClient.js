@@ -186,7 +186,7 @@ export class WhatsAppClientWrapper {
     const senderName = msg._data?.notifyName || msg.pushName || msg.key?.participant || msg.participant || msg.sender || (fromMe ? 'Me' : from);
 
     this.lastTargetChatId = from;
-    const targetChat = this.chatId || 'family_chat';
+    const targetChat = from;
 
     if (fromMe && !this.allowSelfMessages) {
       return null;
