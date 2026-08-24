@@ -1,14 +1,6 @@
 import { CommandType } from './CommandType.js';
 
-/**
- * Parses raw input text from chat or CLI into structured command intents.
- */
 export class MessageParser {
-  /**
-   * Parses raw text into a ParsedCommand object.
-   * @param {string} text 
-   * @returns {Object} Parsed command object
-   */
   static parse(text) {
     if (!text || typeof text !== 'string' || text.trim() === '') {
       return {
@@ -24,9 +16,6 @@ export class MessageParser {
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
 
-    // 1. Help Commands
-
-    // 0. Avvia/Ferma Legacy Commands
     const cleanLower = lower.startsWith('/') ? lower.substring(1).trim() : lower;
 
     if (lower === '/avvia' || lower === '/ferma') {
@@ -49,7 +38,6 @@ export class MessageParser {
       };
     }
 
-    // 2. Query List Commands
     if (
       ['list', 'lista', 'mostra', 'mostra lista', 'show list', 'shopping list'].includes(cleanLower) ||
       cleanLower.startsWith('lista supermercat') ||
@@ -67,7 +55,6 @@ export class MessageParser {
       };
     }
 
-    // 3. Query Habits Commands
     if (['habits', 'abitudini', 'preferenze', 'statistiche', 'stats'].includes(cleanLower)) {
       return {
         command: 'habits',
@@ -91,7 +78,6 @@ export class MessageParser {
       };
     }
 
-    // 4. Reset Command
     if (cleanLower === 'reset' || cleanLower.startsWith('reset ') || cleanLower === 'svuota' || cleanLower.startsWith('svuota ')) {
       if (cleanLower === 'reset' || cleanLower === 'svuota') {
         return {
@@ -103,11 +89,8 @@ export class MessageParser {
           isValid: true
         };
       }
-
       const rest = trimmed.replace(/^\/?(?:reset|svuota)\s+/i, '').trim();
-      // Strip optional leading prepositions (@, at, da, in, -)
       const cleanStore = rest.replace(/^(@|at|da|in|-)\s+/i, '').trim();
-      
       return {
         command: 'reset',
         type: CommandType.RESET_LIST,
@@ -118,7 +101,6 @@ export class MessageParser {
       };
     }
 
-    // 5. Add Item Command
     const addPayload = MessageParser._parseAddItem(trimmed);
     return {
       command: 'add',
@@ -135,47 +117,34 @@ export class MessageParser {
     };
   }
 
-  /**
-   * Internal helper to extract item and store from add item input.
-   * @param {string} text 
-   * @returns {{ itemName: string, storeName: string|null }}
-   * @private
-   */
   static _parseAddItem(text) {
+    let rawText = text;
+    let isUrgent = false;
+
+    // Check for "urgente" anywhere in the string (case insensitive)
+    const urgentRegex = /\burgente\b/i;
+    if (urgentRegex.test(rawText)) {
+      isUrgent = true;
+      rawText = rawText.replace(urgentRegex, '').replace(/\s{2,}/g, ' ').trim();
+    }
+
     // Explicit delimiter check (@, at, da, in, -)
     const delimiterRegex = /\s+(@|at|da|in|-)\s+/i;
-    const match = text.match(delimiterRegex);
+    const match = rawText.match(delimiterRegex);
+
+    let itemName = rawText;
+    let storeName = null;
 
     if (match) {
       const splitIdx = match.index;
-      const itemName = text.slice(0, splitIdx).trim();
-      const storeName = text.slice(splitIdx + match[0].length).trim();
-      return { itemName, storeName: storeName || null };
+      itemName = rawText.slice(0, splitIdx).trim();
+      storeName = rawText.slice(splitIdx + match[0].length).trim();
     }
 
-    // Multi-word heuristic
-    const tokens = text.split(/\s+/);
-    if (tokens.length === 2) {
-      return {
-        itemName: tokens[0],
-        storeName: tokens[1]
-      };
+    if (isUrgent) {
+      itemName = `🔴 ${itemName}`;
     }
 
-    if (tokens.length > 2) {
-      // Check if last word is store candidate
-      const potentialStore = tokens[tokens.length - 1];
-      const potentialItem = tokens.slice(0, tokens.length - 1).join(' ');
-      // If store is separated or obvious
-      return {
-        itemName: potentialItem,
-        storeName: potentialStore
-      };
-    }
-
-    return {
-      itemName: text,
-      storeName: null
-    };
+    return { itemName, storeName: storeName || null };
   }
 }

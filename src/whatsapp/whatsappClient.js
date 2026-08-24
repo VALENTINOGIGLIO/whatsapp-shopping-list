@@ -292,9 +292,13 @@ export class WhatsAppClientWrapper {
         const itemName = parsed.item || commandText.trim();
         const storeName = parsed.store || null;
 
-        const result = await this.shoppingListService.addItem(targetChat, itemName, storeName, senderName);
-        const storeInfo = result.item.store ? ` (${result.item.store})` : '';
-        response = `✅ Aggiunto alla lista: ${result.item.name}${storeInfo}`;
+        await this.shoppingListService.addItem(targetChat, itemName, storeName, senderName);
+        if (typeof msg.react === 'function') {
+          await msg.react('✅');
+        } else if (this.sock && msg.key) {
+          await this.sock.sendMessage(from, { react: { text: '✅', key: msg.key } });
+        }
+        response = null;
       }
     } catch (err) {
       console.error('Error processing message in handleIncomingMessage:', err);
