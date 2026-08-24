@@ -126,7 +126,7 @@ export class WhatsAppClientWrapper {
   }
 
   getQrCode() {
-    return this.qrCode || this.qrCodeDataURL || null;
+    return this.qrCodeDataURL || this.qrCode || null;
   }
 
   isReady() {
