@@ -65,3 +65,30 @@ Since testing a WhatsApp bot requires physical QR code scanning, the system must
 - [ ] Documentation is provided on how to deploy the bot to a free cloud hosting service (e.g., Render) and how to scan the QR code.
 - [ ] The Render deployment is robust against missing Chrome dependencies and the `/health` endpoint responds with a 200 OK after deployment.
 
+
+## Follow-up — 2026-08-23T09:26:16Z
+
+Fix the WhatsApp Shopping List bot so that it runs, deploys correctly, and functions as intended without errors. The bot should be able to read the existing files, understand the architecture, and apply the necessary fixes.
+
+Working directory: /Users/gi/teamwork_projects/whatsapp_shopping_list
+Integrity mode: development
+
+## Requirements
+
+### R1. Understand the Architecture
+Before making any changes, read the source code, project documentation (e.g., `PROJECT.md`, `DEPLOYMENT.md`), and configuration files to understand how the WhatsApp shopping list bot is designed to work.
+
+### R2. Diagnose and Fix Issues
+Identify why the bot is currently not working or failing to deploy. This may involve fixing Node.js errors, WhatsApp client authentication/pairing issues (e.g., Baileys/puppeteer), or deployment configuration problems.
+
+### R3. Verify Deployment and Functionality
+Ensure the bot can be successfully started and deployed according to its configuration (e.g., `render.yaml` or `Dockerfile`). The bot must successfully connect to WhatsApp and respond to shopping list commands.
+
+## Acceptance Criteria
+
+### Functionality
+- [ ] The bot's source code compiles/runs without syntax or immediate runtime errors.
+- [ ] The bot can successfully start and connect to the WhatsApp network (or prompt for pairing/QR correctly without crashing).
+- [ ] If there are existing test suites (`tests/`), they must pass.
+
+

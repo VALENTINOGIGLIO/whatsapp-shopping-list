@@ -2,8 +2,12 @@ node_modules
 .cache
 .wwebjs_auth
 .wwebjs_cache
+auth_info_baileys
+.mock_db.json
+.tmp_*
 .env
 .git
 .agents
 coverage
 *.md
+

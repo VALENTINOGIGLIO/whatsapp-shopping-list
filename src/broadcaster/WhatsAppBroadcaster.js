@@ -58,9 +58,17 @@ export class WhatsAppBroadcaster extends NotificationBroadcaster {
       }
     }
 
-    if (isReady && client && typeof client.sendMessage === 'function') {
+    if (isReady && (this.clientWrapper || client)) {
       try {
-        await client.sendMessage(targetRecipient, message);
+        if (this.clientWrapper && typeof this.clientWrapper.sendMessage === 'function') {
+          await this.clientWrapper.sendMessage(targetRecipient, message);
+        } else if (client && typeof client.sendMessage === 'function') {
+          if (client.ev) {
+            await client.sendMessage(targetRecipient, { text: message });
+          } else {
+            await client.sendMessage(targetRecipient, message);
+          }
+        }
       } catch (err) {
         console.error('❌ [WhatsAppBroadcaster] Failed to send message:', err);
       }

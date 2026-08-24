@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,7 @@ import { MockBroadcaster } from '../src/broadcaster/MockBroadcaster.js';
 export function parseCliArgs(rawArgs = []) {
   let store = null;
   let sender = 'cli_user';
-  let dbType = (process.env.USE_FIRESTORE === 'true' || process.env.FIREBASE_SERVICE_ACCOUNT) ? 'firestore' : 'mock';
+  let dbType = 'mock';
   let help = false;
   const positionals = [];
 

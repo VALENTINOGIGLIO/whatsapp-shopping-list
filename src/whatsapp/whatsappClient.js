@@ -1,26 +1,194 @@
+import 'dotenv/config';
 import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { ShoppingListService } from '../domain/ShoppingListService.js';
 import { FirestoreAdapter } from '../db/FirestoreAdapter.js';
+import { MessageParser } from '../domain/MessageParser.js';
 import { useFirestoreAuthState } from './FirestoreAuthState.js';
 import qrcode from 'qrcode';
+import { createWebServer } from '../web/server.js';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 export class WhatsAppClientWrapper {
-  constructor() {
-    const dbAdapter = new FirestoreAdapter();
-    this.shoppingListService = new ShoppingListService(dbAdapter);
-    this.sock = null;
+  constructor(options = {}) {
+    this.status = 'INITIALIZING';
+    this.qrCode = null;
     this.qrCodeDataURL = null;
+    this.lastTargetChatId = options.defaultRecipient || 'family_chat';
+    this.allowSelfMessages = Boolean(options.allowSelfMessages);
+    this.showTerminalQr = options.showTerminalQr !== false;
+    this.shoppingListService = options.service || options.shoppingListService || new ShoppingListService(new FirestoreAdapter());
+    this.sock = null;
+    this.client = options.client || null;
     this.activeSessions = new Set();
+
+    if (this.client) {
+      this.client.on('qr', (qr) => {
+        this.status = 'QR_READY';
+        this.qrCode = qr;
+        this.qrCodeDataURL = qr;
+      });
+
+      this.client.on('authenticated', () => {
+        this.status = 'AUTHENTICATED';
+        this.qrCode = null;
+        this.qrCodeDataURL = null;
+      });
+
+      this.client.on('ready', () => {
+        this.status = 'READY';
+        this.qrCode = null;
+        this.qrCodeDataURL = null;
+      });
+
+      this.client.on('auth_failure', () => {
+        this.status = 'AUTH_FAILURE';
+      });
+
+      this.client.on('disconnected', () => {
+        this.status = 'DISCONNECTED';
+      });
+
+      this.client.on('message', async (msg) => {
+        await this.handleIncomingMessage(msg);
+      });
+    }
+  }
+
+  getStatus() {
+    return this.status || (this.sock ? 'READY' : 'INITIALIZING');
+  }
+
+  getQrCode() {
+    return this.qrCode || this.qrCodeDataURL || null;
+  }
+
+  isReady() {
+    return this.status === 'READY';
+  }
+
+  getClient() {
+    return this.client || this.sock || null;
+  }
+
+  getLastTargetChatId() {
+    return this.lastTargetChatId || 'family_chat';
+  }
+
+  async sendMessage(to, content) {
+    this.lastTargetChatId = to || this.lastTargetChatId || 'family_chat';
+    const targetChat = this.lastTargetChatId;
+
+    if (this.client && typeof this.client.sendMessage === 'function') {
+      return await this.client.sendMessage(targetChat, content);
+    }
+    if (this.sock && typeof this.sock.sendMessage === 'function') {
+      const payload = typeof content === 'string' ? { text: content } : content;
+      return await this.sock.sendMessage(targetChat, payload);
+    }
+    return null;
+  }
+
+  async handleIncomingMessage(msg) {
+    if (!msg || typeof msg !== 'object') return null;
+
+    const fromMe = Boolean(msg.fromMe || msg.key?.fromMe);
+    let text = typeof msg.body === 'string' ? msg.body : (msg.text || msg.message?.conversation || msg.message?.extendedTextMessage?.text || null);
+    if (!text || typeof text !== 'string' || text.trim() === '') return null;
+
+    const from = msg.from || msg.key?.remoteJid || 'family_chat';
+    const senderName = msg._data?.notifyName || msg.pushName || msg.sender || from;
+
+    this.lastTargetChatId = from;
+    const targetChat = this.chatId || 'family_chat';
+
+    if (fromMe && !this.allowSelfMessages) {
+      return null;
+    }
+
+    if (fromMe && /^[✅❌🟢🔴🤖🛒🏪]/.test(text.trim())) {
+      return null;
+    }
+
+    let response = '';
+
+    try {
+      const parsed = MessageParser.parse(text);
+
+      if (parsed.command === 'help') {
+        response = '🤖 *WhatsApp Shopping List Bot*\n' +
+          '- *Aggiungere un articolo*: scrivi il nome del prodotto (es. "latte", "pane eurospin")\n' +
+          '- *Visualizzare lista*: scrivi "lista" o "list"\n' +
+          '- *Resettare lista*: scrivi "reset" o "reset [supermercato]"\n' +
+          '- *Abitudini*: scrivi "abitudini" o "abitudini [prodotto]"\n' +
+          '- *Aiuto*: scrivi "aiuto" o "help"';
+      } else if (parsed.command === 'list') {
+        if (text.toLowerCase().includes('supermercat')) {
+          const items = await this.shoppingListService.getList(targetChat);
+          response = this.shoppingListService.formatListGroupedByStore(items);
+        } else {
+          const items = await this.shoppingListService.getList(targetChat);
+          response = this.shoppingListService.formatListForDisplay(items);
+        }
+      } else if (parsed.command === 'habits') {
+        const item = parsed.item || (parsed.payload && parsed.payload.itemName);
+        const habits = await this.shoppingListService.getHabits(targetChat, item || null);
+        if (item) {
+          if (habits && habits.length > 0) {
+            const h = habits[0];
+            response = `📊 *Abitudini di Spesa* per ${h.itemName}:\n- Supermercato preferito: ${h.favoriteStore || 'nessuno'}`;
+          } else {
+            response = `📊 *Abitudini di Spesa*: nessuna preferenza registrata per "${item}".`;
+          }
+        } else {
+          response = `📊 *Abitudini di Spesa* (${habits.length} articoli registrati).`;
+        }
+      } else if (parsed.command === 'reset') {
+        const store = parsed.store || (parsed.payload && parsed.payload.storeName) || null;
+        const result = await this.shoppingListService.resetList(targetChat, store, senderName);
+        const storeText = store ? ` presso ${store.toUpperCase()}` : '';
+        response = `Spesa completata${storeText}! La lista è stata svuotata (${result.itemsCleared} articoli).`;
+      } else {
+        // Add item
+        const itemName = parsed.item || text.trim();
+        const storeName = parsed.store || null;
+
+        const result = await this.shoppingListService.addItem(targetChat, itemName, storeName, senderName);
+        const storeInfo = result.item.store ? ` (${result.item.store})` : '';
+        response = `✅ Aggiunto alla lista: ${result.item.name}${storeInfo}`;
+      }
+    } catch (err) {
+      console.error('Error processing message in handleIncomingMessage:', err);
+      response = `❌ Si è verificato un errore: ${err.message || err}`;
+    }
+
+    if (response) {
+      try {
+        if (typeof msg.reply === 'function') {
+          await msg.reply(response);
+        } else if (this.client && typeof this.client.sendMessage === 'function') {
+          await this.client.sendMessage(from, response);
+        } else if (this.sock && typeof this.sock.sendMessage === 'function') {
+          await this.sock.sendMessage(from, { text: response });
+        }
+      } catch (replyErr) {
+        console.error('Error sending reply:', replyErr);
+      }
+    }
+
+    return response;
   }
 
   async initialize() {
-    // Extract the internal firestore instance to pass to the adapter
-    const db = await this.shoppingListService.db._getDb();
+    this.status = 'INITIALIZING';
+    let db = null;
+    if (this.shoppingListService.db && typeof this.shoppingListService.db._getDb === 'function') {
+      db = await this.shoppingListService.db._getDb();
+    }
     
     let state, saveCreds;
     
-    // Fallback to local files if mock DB or something went wrong
     if (db && typeof db.collection === 'function') {
       console.log('📦 [Auth] Using Firestore to save WhatsApp session');
       const auth = await useFirestoreAuthState(db, 'whatsapp_auth');
@@ -37,7 +205,7 @@ export class WhatsAppClientWrapper {
 
     this.sock = makeWASocket({
       auth: state,
-      printQRInTerminal: true,
+      printQRInTerminal: this.showTerminalQr,
       logger
     });
 
@@ -47,201 +215,45 @@ export class WhatsAppClientWrapper {
       const { connection, lastDisconnect, qr } = update;
       
       if (qr) {
+        this.status = 'QR_READY';
+        this.qrCode = qr;
         this.qrCodeDataURL = await qrcode.toDataURL(qr);
       }
 
       if (connection === 'close') {
-        const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log('❌ [WhatsApp] Connection closed due to', lastDisconnect.error?.message, ', reconnecting:', shouldReconnect);
+        this.status = 'DISCONNECTED';
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        console.log('❌ [WhatsApp] Connection closed due to', lastDisconnect?.error?.message, ', reconnecting:', shouldReconnect);
         if (shouldReconnect) {
           this.initialize();
         }
       } else if (connection === 'open') {
-        console.log('✅ [WhatsApp] Connected successfully!');
+        this.status = 'READY';
+        this.qrCode = null;
         this.qrCodeDataURL = null;
+        console.log('✅ [WhatsApp] Connected successfully!');
       }
     });
 
     this.sock.ev.on('messages.upsert', async (m) => {
       const msg = m.messages[0];
-      if (!msg.message) return;
-
-      const remoteJid = msg.key.remoteJid;
-      const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-
-      if (!text) return;
-
-      console.log(`[DEBUG] Received message: "${text}" from: ${remoteJid} (fromMe: ${msg.key.fromMe})`);
-
-      // Il bot condivide l'account con l'utente (stesso numero).
-      // Se il messaggio è stato inviato dal nostro numero (msg.key.fromMe),
-      // dobbiamo capire se l'ha scritto l'utente dal telefono o se l'ha inviato il bot stesso.
-      // Poiché tutti i messaggi del bot iniziano con un'emoji specifica, li ignoriamo se matchano.
-      if (msg.key.fromMe && /^[✅❌🟢🔴🤖🛒]/.test(text)) {
-        return;
-      }
-
-      const lower = text.trim().toLowerCase();
-      let response = '';
-      let reaction = '';
-
-      try {
-        if (lower === '/avvia') {
-          this.activeSessions.add(remoteJid);
-          response = '🟢 Modalità Spesa ATTIVATA in questa chat.\nOra tutto quello che scrivi verrà aggiunto direttamente alla lista! (Scrivi /ferma per disabilitare)';
-        } else if (lower === '/ferma') {
-          this.activeSessions.delete(remoteJid);
-          response = '🔴 Modalità Spesa DISATTIVATA in questa chat.\nI messaggi normali verranno di nuovo ignorati.';
-        } else {
-          let isSessionActive = this.activeSessions.has(remoteJid);
-          let commandText = lower;
-          let usedDoubleExclamation = false;
-
-          if (!isSessionActive) {
-            if (lower.startsWith('!!')) {
-              usedDoubleExclamation = true;
-              commandText = lower.substring(2).trim();
-            } else if (lower.startsWith('!')) {
-              commandText = lower.substring(1).trim();
-            } else {
-              return;
-            }
-          }
-
-          if (commandText === 'lista') {
-            const items = await this.shoppingListService.getList(remoteJid);
-            response = this.shoppingListService.formatListForDisplay(items);
-          } else if (commandText === 'lista supermercati' || commandText === 'lista supermercato') {
-            const items = await this.shoppingListService.getList(remoteJid);
-            response = this.shoppingListService.formatListGroupedByStore(items);
-          } else if (commandText.startsWith('reset')) {
-            const store = commandText.replace(/^reset\s*/, '').trim() || null;
-            const result = await this.shoppingListService.resetList(remoteJid, store, remoteJid);
-            response = `✅ Lista resettata. Svuotati ${result.itemsCleared} articoli.`;
-          } else if (commandText.startsWith('cancella ') || commandText.startsWith('cancella-')) {
-            const item = commandText.replace(/^cancella[-\s]+/, '').trim();
-            if (item) {
-              const removed = await this.shoppingListService.removeItem(remoteJid, item);
-              if (removed) reaction = '✅';
-              else response = `❌ Articolo "${item}" non trovato nella lista.`;
-            }
-          } else if (commandText.startsWith('spunta ')) {
-            const item = commandText.replace(/^spunta\s+/, '').trim();
-            if (item) {
-              const updated = await this.shoppingListService.markItemStatus(remoteJid, item, { isChecked: true });
-              if (updated) reaction = '✅';
-              else response = `❌ Articolo "${item}" non trovato nella lista.`;
-            }
-          } else if (commandText.startsWith('urgente ')) {
-            const rawItem = commandText.replace(/^urgente\s+/, '').trim();
-            if (rawItem) {
-              // Try parsing " da " first so markItemStatus gets the correct name
-              let itemName = rawItem;
-              let store = null;
-              const daIndex = rawItem.lastIndexOf(' da ');
-              if (daIndex !== -1) {
-                itemName = rawItem.substring(0, daIndex).trim();
-                store = rawItem.substring(daIndex + 4).trim();
-              }
-
-              const updated = await this.shoppingListService.markItemStatus(remoteJid, itemName, { isUrgent: true });
-              if (updated) {
-                // If it already existed but store was provided, let's update the store/habit via addItem
-                if (store) {
-                  await this.shoppingListService.addItem(remoteJid, itemName, store, remoteJid);
-                }
-                reaction = '✅';
-              } else {
-                // Not found, add it now
-                await this.shoppingListService.addItem(remoteJid, itemName, store, remoteJid);
-                await this.shoppingListService.markItemStatus(remoteJid, itemName, { isUrgent: true });
-                reaction = '✅';
-              }
-            }
-          } else if (commandText === 'aiuto' || commandText === 'help') {
-            response = '🤖 *Comandi Bot Spesa:*\n' +
-                       '- `/avvia` / `/ferma` (attiva/disattiva inserimento rapido)\n' +
-                       '- `[prodotto]` (aggiunge alla lista)\n' +
-                       '- `[prodotto] da [supermercato]` (es. latte da eurospin)\n' +
-                       '- `lista` (mostra la lista)\n' +
-                       '- `lista supermercati` (mostra la lista divisa per negozi)\n' +
-                       '- `cancella [prodotto]` (rimuove l\'articolo)\n' +
-                       '- `spunta [prodotto]` (segna come preso)\n' +
-                       '- `urgente [prodotto]` (segna come urgente 🔴)\n' +
-                       '- `reset` o `reset [supermercato]` (svuota la lista)';
-          } else {
-            // Se in modalità sessione, trattiamo qualsiasi altra stringa come aggiunta articolo
-            // Se in modalità classica, supportiamo !spesa e !aggiungi per retrocompatibilità
-            let itemText = commandText;
-            if (!isSessionActive && !usedDoubleExclamation) {
-               if (commandText.startsWith('aggiungi ') || commandText.startsWith('spesa ')) {
-                 itemText = commandText.replace(/^(aggiungi|spesa)\s+/, '').trim();
-               } else {
-                 response = '🤖 Comando non riconosciuto. Usa `!aiuto` per la lista dei comandi.';
-                 itemText = '';
-               }
-            }
-            
-            if (itemText) {
-              // Parse "item da store"
-              let item = itemText;
-              let store = null;
-              const daIndex = itemText.lastIndexOf(' da ');
-              if (daIndex !== -1) {
-                item = itemText.substring(0, daIndex).trim();
-                store = itemText.substring(daIndex + 4).trim();
-              }
-              
-              if (item) {
-                // Check for "urgente" inline
-                let isUrgent = false;
-                const urgentRegex = /(?:^|\s)urgente(?:$|\s)/i;
-                if (urgentRegex.test(item)) {
-                  isUrgent = true;
-                  item = item.replace(urgentRegex, ' ').trim();
-                  // In case there's multiple spaces left behind
-                  item = item.replace(/\s+/g, ' ');
-                }
-
-                await this.shoppingListService.addItem(remoteJid, item, store, remoteJid);
-                if (isUrgent) {
-                  await this.shoppingListService.markItemStatus(remoteJid, item, { isUrgent: true });
-                }
-                reaction = '✅';
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error processing message:', err);
-        response = '❌ Errore durante l\'elaborazione del comando.';
-      }
-      
-      if (response) {
-        await this.sock.sendMessage(remoteJid, { text: response });
-      }
-      if (reaction) {
-        await this.sock.sendMessage(remoteJid, { react: { text: reaction, key: msg.key } });
-      }
+      if (!msg || !msg.message) return;
+      await this.handleIncomingMessage(msg);
     });
-  }
-
-  getQrCode() {
-    return this.qrCodeDataURL;
   }
 }
 
 export const whatsappClient = new WhatsAppClientWrapper();
 
-import { createWebServer } from '../web/server.js';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-
 const isMainModule = (metaUrl) => {
-  if (!metaUrl) return false;
-  const currentFilePath = fileURLToPath(metaUrl);
-  const executedPath = fs.realpathSync(process.argv[1]);
-  return currentFilePath === executedPath;
+  if (!metaUrl || !process.argv || !process.argv[1]) return false;
+  try {
+    const currentFilePath = fileURLToPath(metaUrl);
+    const executedPath = fs.realpathSync(process.argv[1]);
+    return currentFilePath === executedPath;
+  } catch (_) {
+    return false;
+  }
 };
 
 if (isMainModule(import.meta.url)) {
@@ -256,3 +268,4 @@ if (isMainModule(import.meta.url)) {
     });
   });
 }
+

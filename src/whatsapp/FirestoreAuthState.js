@@ -1,12 +1,18 @@
-import { initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
+import { initAuthCreds, BufferJSON, proto } from '@whiskeysockets/baileys';
 
 export const useFirestoreAuthState = async (db, collectionName = 'whatsapp_auth') => {
   const collection = db.collection(collectionName);
 
+  const sanitizeId = (id) => {
+    if (!id || typeof id !== 'string') return id;
+    return id.replace(/\//g, '__slash__');
+  };
+
   const writeData = async (data, id) => {
     try {
       const str = JSON.stringify(data, BufferJSON.replacer);
-      await collection.doc(id).set({ data: str });
+      const safeId = sanitizeId(id);
+      await collection.doc(safeId).set({ data: str });
     } catch (err) {
       console.error(`[FirestoreAuthState] Error writing ${id}:`, err);
     }
@@ -14,7 +20,8 @@ export const useFirestoreAuthState = async (db, collectionName = 'whatsapp_auth'
 
   const readData = async (id) => {
     try {
-      const doc = await collection.doc(id).get();
+      const safeId = sanitizeId(id);
+      const doc = await collection.doc(safeId).get();
       if (doc.exists && doc.data().data) {
         return JSON.parse(doc.data().data, BufferJSON.reviver);
       }
@@ -27,7 +34,8 @@ export const useFirestoreAuthState = async (db, collectionName = 'whatsapp_auth'
 
   const removeData = async (id) => {
     try {
-      await collection.doc(id).delete();
+      const safeId = sanitizeId(id);
+      await collection.doc(safeId).delete();
     } catch (err) {
       console.error(`[FirestoreAuthState] Error removing ${id}:`, err);
     }
@@ -45,7 +53,7 @@ export const useFirestoreAuthState = async (db, collectionName = 'whatsapp_auth'
             ids.map(async (id) => {
               let value = await readData(`${type}-${id}`);
               if (type === 'app-state-sync-key' && value) {
-                value = typeof value === 'string' ? value : JSON.stringify(value);
+                value = proto.Message.AppStateSyncKeyData.fromObject(value);
               }
               data[id] = value;
             })
@@ -70,3 +78,4 @@ export const useFirestoreAuthState = async (db, collectionName = 'whatsapp_auth'
     },
   };
 };
+

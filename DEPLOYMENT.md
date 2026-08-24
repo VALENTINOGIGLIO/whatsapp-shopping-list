@@ -37,19 +37,20 @@ This guide provides comprehensive, step-by-step instructions for deploying the *
 ## 1. Overview & Architecture
 
 The WhatsApp Shopping List application uses a decoupled 3-tier architecture:
-- **Transport Adapters**: `whatsapp-web.js` (WhatsApp Web API client running headless Chromium via Puppeteer) and non-interactive CLI runner (`bin/cli.js`).
+- **Transport Adapters**: `@whiskeysockets/baileys` (lightweight, direct WebSocket WhatsApp protocol client — zero Chromium / Puppeteer dependencies) and non-interactive CLI runner (`bin/cli.js`).
 - **Core Business Logic**: `ShoppingListService` (item addition, store preference inference, list reset), `HabitTracker` (frequent store calculation and purchase history logging), `MessageParser` (command parsing), and `NotificationBroadcaster`.
-- **Data Persistence**: `FirestoreAdapter` (cloud database) with fallback to `MockDatabaseAdapter` (in-memory/file storage).
+- **Data Persistence**: `FirestoreAdapter` (cloud database) with fallback to `MockDatabaseAdapter` (in-memory/file storage) and `FirestoreAuthState` (saving session authentication credentials to Firestore `whatsapp_auth` collection).
 - **Express HTTP Server**: Built-in HTTP server listening on port `PORT` providing:
   - `/health` endpoint: Returns HTTP 200 JSON status for external keep-alive monitoring.
   - `/qr` endpoint: Renders an HTML page displaying live WhatsApp Web QR code for browser-based QR scanning.
+  - `/reconnect` endpoint: Safely resets session credentials from Firestore and restarts client.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                 Render Free Web Service                     │
 │  ┌───────────────────────┐       ┌───────────────────────┐  │
-│  │  Express HTTP Server  │       │  WhatsApp Web Client  │  │
-│  │   (/health, /qr)      │       │ (whatsapp-web.js)     │  │
+│  │  Express HTTP Server  │       │  WhatsApp Baileys     │  │
+│  │   (/health, /qr)      │       │     Client            │  │
 │  └───────────▲───────────┘       └───────────▲───────────┘  │
 │              │                               │              │
 │              └───────────────┬───────────────┘              │
@@ -61,10 +62,12 @@ The WhatsApp Shopping List application uses a decoupled 3-tier architecture:
 │                ┌─────────────▼─────────────┐                │
 │                │     FirestoreAdapter      │                │
 │                └─────────────┬─────────────┘                │
+│                              │                              │
 └──────────────────────────────┼──────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
                     │  Google Firestore   │
+                    │ (data & auth state) │
                     └─────────────────────┘
 ```
 
@@ -349,24 +352,8 @@ npm run test:e2e
 
 ## 7. Troubleshooting & Common Issues
 
-### 7.1 Puppeteer Build Dependencies & Chromium Flags
-**Symptom**: Render container fails during WhatsApp client initialization with errors like `Failed to launch the browser process!` or `No usable sandbox found`.
-
-**Cause & Solution**:
-- Linux container environments (such as Render) require specific flags when launching Chromium via Puppeteer without root sandbox capabilities.
-- The `WhatsAppClientWrapper` automatically includes the required Puppeteer arguments:
-  ```js
-  puppeteer: {
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--single-process'
-    ]
-  }
-  ```
-- If deployment fails on Render due to missing Linux library dependencies, set `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false` in environment variables or ensure Node version is set to 18+.
+### 7.1 Pure WebSocket Architecture & Zero Chromium Dependencies
+The application uses `@whiskeysockets/baileys` (a lightweight native WebSocket WhatsApp client), completely eliminating the need for Chromium, Puppeteer, or OS graphics packages. This ensures that the Render container runs efficiently under 100MB of RAM and boots in milliseconds.
 
 ### 7.2 Render Free Instance Resource Limitations
 **Symptom**: Service restarts unexpectedly or logs `Out of Memory (OOM)` errors.

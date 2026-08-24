@@ -2,6 +2,12 @@ import { MockDatabaseAdapter } from '../db/MockDatabaseAdapter.js';
 import { MockBroadcaster } from '../broadcaster/MockBroadcaster.js';
 import { HabitTracker } from './HabitTracker.js';
 
+function isChatId(str) {
+  if (typeof str !== 'string') return false;
+  const s = str.trim().toLowerCase();
+  return s.includes('@') || s.startsWith('chat_') || s.startsWith('group_') || s === 'family_chat' || s === 'default_chat';
+}
+
 export class ShoppingListService {
   constructor(dbAdapterOrOptions, broadcaster, habitTracker) {
     if (dbAdapterOrOptions && typeof dbAdapterOrOptions === 'object' && dbAdapterOrOptions.dbAdapter) {
@@ -25,8 +31,42 @@ export class ShoppingListService {
     }
   }
 
-  async addItem(chatId, itemName, storeName = null, sender = 'user1') {
-    if (!chatId) throw new Error('chatId is required');
+  async addItem(arg1, arg2 = null, arg3 = null, arg4 = null) {
+    let chatId = 'family_chat';
+    let itemName = null;
+    let storeName = null;
+    let sender = 'user1';
+
+    if (arg4 !== null && arg4 !== undefined) {
+      chatId = arg1 || 'family_chat';
+      itemName = arg2;
+      storeName = arg3 || null;
+      sender = arg4 || 'user1';
+    } else if (arg3 !== null && arg3 !== undefined) {
+      if (isChatId(arg1)) {
+        chatId = arg1;
+        itemName = arg2;
+        storeName = arg3 || null;
+      } else {
+        chatId = 'family_chat';
+        itemName = arg1;
+        storeName = arg2 || null;
+        sender = arg3 || 'user1';
+      }
+    } else if (arg2 !== null && arg2 !== undefined) {
+      if (isChatId(arg1)) {
+        chatId = arg1;
+        itemName = arg2;
+      } else {
+        chatId = 'family_chat';
+        itemName = arg1;
+        storeName = arg2 || null;
+      }
+    } else {
+      chatId = 'family_chat';
+      itemName = arg1;
+    }
+
     if (!itemName || typeof itemName !== 'string' || itemName.trim() === '') {
       throw new Error('Item name cannot be empty');
     }
@@ -83,13 +123,47 @@ export class ShoppingListService {
     return { item: itemToSave, habitUpdated };
   }
 
-  async removeItem(chatId, itemName) {
-    if (!chatId || !itemName) return false;
+  async removeItem(arg1, arg2 = null) {
+    let chatId = 'family_chat';
+    let itemName = null;
+    if (arg2 !== null && arg2 !== undefined) {
+      chatId = arg1 || 'family_chat';
+      itemName = arg2;
+    } else {
+      chatId = 'family_chat';
+      itemName = arg1;
+    }
+    if (!itemName) return false;
     return await this.db.deleteActiveItem(chatId, itemName);
   }
 
-  async resetList(chatId, storeName = null, sender = 'user1') {
-    if (!chatId) throw new Error('chatId is required');
+  async resetList(arg1 = null, arg2 = null, arg3 = null) {
+    let chatId = 'family_chat';
+    let storeName = null;
+    let sender = 'user1';
+
+    if (arg3 !== null && arg3 !== undefined) {
+      chatId = arg1 || 'family_chat';
+      storeName = arg2 || null;
+      sender = arg3 || 'user1';
+    } else if (arg2 !== null && arg2 !== undefined) {
+      if (isChatId(arg1)) {
+        chatId = arg1;
+        storeName = arg2 || null;
+      } else {
+        chatId = 'family_chat';
+        storeName = arg1 || null;
+        sender = arg2 || 'user1';
+      }
+    } else if (arg1 !== null && arg1 !== undefined) {
+      if (isChatId(arg1)) {
+        chatId = arg1;
+      } else {
+        chatId = 'family_chat';
+        storeName = arg1;
+      }
+    }
+
     const activeItems = await this.db.getActiveItems(chatId);
     const itemsCleared = activeItems.length;
     const cleanStore = storeName ? storeName.trim().toLowerCase() : null;
@@ -131,13 +205,27 @@ export class ShoppingListService {
     return { resetRecord, itemsCleared };
   }
 
-  async getList(chatId) {
-    if (!chatId) throw new Error('chatId is required');
+  async getList(arg1 = null) {
+    const chatId = arg1 || 'family_chat';
     return await this.db.getActiveItems(chatId);
   }
 
-  async markItemStatus(chatId, itemName, statusUpdates) {
-    if (!chatId || !itemName) return false;
+  async markItemStatus(arg1, arg2, arg3 = null) {
+    let chatId = 'family_chat';
+    let itemName = null;
+    let statusUpdates = null;
+
+    if (arg3 !== null && arg3 !== undefined) {
+      chatId = arg1 || 'family_chat';
+      itemName = arg2;
+      statusUpdates = arg3;
+    } else {
+      chatId = 'family_chat';
+      itemName = arg1;
+      statusUpdates = arg2;
+    }
+
+    if (!itemName || !statusUpdates) return false;
     const cleanItem = itemName.trim().toLowerCase();
     const items = await this.db.getActiveItems(chatId);
     const item = items.find(i => i.canonicalName === cleanItem || i.name.toLowerCase() === cleanItem);
@@ -150,22 +238,36 @@ export class ShoppingListService {
     return true;
   }
 
-  async getHabits(chatId, itemName = null) {
-    if (!chatId) throw new Error('chatId is required');
+  async getHabits(arg1 = null, arg2 = null) {
+    let chatId = 'family_chat';
+    let itemName = null;
+
+    if (arg2 !== null && arg2 !== undefined) {
+      chatId = arg1 || 'family_chat';
+      itemName = arg2;
+    } else if (arg1 !== null && arg1 !== undefined) {
+      if (isChatId(arg1)) {
+        chatId = arg1;
+      } else {
+        chatId = 'family_chat';
+        itemName = arg1;
+      }
+    }
+
     return await this.habitTracker.getHabits(chatId, itemName, this.db);
   }
 
   formatListForDisplay(items) {
     if (!items || items.length === 0) {
-      return '🛒 La lista è vuota.';
+      return '🛒 Shopping list is empty / La lista è vuota.';
     }
 
-    const lines = [`🛒 *Lista della Spesa* (${items.length} articoli):`];
+    const lines = [`🛒 *Shopping List / Lista della Spesa* (${items.length} articoli):`];
     items.forEach((item, index) => {
       let storeInfo = '';
       if (item.store) {
         storeInfo = item.storeInferred
-          ? ` (${item.store} - abitudine)`
+          ? ` (${item.store} - favorite)`
           : ` (${item.store})`;
       }
       
@@ -182,7 +284,7 @@ export class ShoppingListService {
 
   formatListGroupedByStore(items) {
     if (!items || items.length === 0) {
-      return '🛒 La lista è vuota.';
+      return '🛒 Shopping list is empty / La lista è vuota.';
     }
 
     const groups = {};
@@ -207,7 +309,7 @@ export class ShoppingListService {
         if (item.isChecked) prefix = '✅';
         else if (item.isUrgent) prefix = '🔴';
         const strike = item.isChecked ? '~' : '';
-        const inferred = item.storeInferred ? ' (abitudine)' : '';
+        const inferred = item.storeInferred ? ' (favorite)' : '';
         lines.push(`  ${prefix} ${strike}${item.name}${strike}${inferred}`);
       });
       lines.push('');
@@ -227,3 +329,4 @@ export class ShoppingListService {
     return lines.join('\n').trim();
   }
 }
+

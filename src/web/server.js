@@ -23,11 +23,24 @@ export function createWebServer(options = {}) {
   app.use(express.json());
 
   const getStatus = options.getStatus || (options.whatsappClient
-    ? () => options.whatsappClient.sock ? 'READY' : 'INITIALIZING'
+    ? () => {
+        if (typeof options.whatsappClient.getStatus === 'function') {
+          return options.whatsappClient.getStatus();
+        }
+        if (typeof options.whatsappClient.isReady === 'function') {
+          return options.whatsappClient.isReady() ? 'READY' : 'INITIALIZING';
+        }
+        return 'INITIALIZING';
+      }
     : () => 'INITIALIZING');
 
   const getQrCode = options.getQrCode || (options.whatsappClient
-    ? () => options.whatsappClient.getQrCode()
+    ? () => {
+        if (typeof options.whatsappClient.getQrCode === 'function') {
+          return options.whatsappClient.getQrCode();
+        }
+        return null;
+      }
     : () => null);
 
   app.get('/', (req, res) => {
@@ -57,22 +70,23 @@ export function createWebServer(options = {}) {
     try {
       console.log('🔄 [Reconnect] Forzando logout e riconnessione...');
 
-      // 1. Cancella TUTTE le credenziali auth da Firestore
+      // 1. Cancella TUTTE le credenziali auth da Firestore se presenti
       try {
-        const db = await client.shoppingListService.db._getDb();
-        if (db) {
-          const authColl = db.collection('whatsapp_auth');
-          const snapshot = await authColl.get();
-          if (!snapshot.empty) {
-            // Firestore batch max 500 docs
-            const batchSize = 500;
-            const docs = snapshot.docs;
-            for (let i = 0; i < docs.length; i += batchSize) {
-              const batch = db.batch();
-              docs.slice(i, i + batchSize).forEach(doc => batch.delete(doc.ref));
-              await batch.commit();
+        if (client.shoppingListService && client.shoppingListService.db && typeof client.shoppingListService.db._getDb === 'function') {
+          const db = await client.shoppingListService.db._getDb();
+          if (db && typeof db.collection === 'function') {
+            const authColl = db.collection('whatsapp_auth');
+            const snapshot = await authColl.get();
+            if (snapshot && !snapshot.empty) {
+              const batchSize = 500;
+              const docs = snapshot.docs;
+              for (let i = 0; i < docs.length; i += batchSize) {
+                const batch = db.batch();
+                docs.slice(i, i + batchSize).forEach(doc => batch.delete(doc.ref || doc));
+                await batch.commit();
+              }
+              console.log(`🔄 [Reconnect] Cancellate ${docs.length} credenziali auth da Firestore`);
             }
-            console.log(`🔄 [Reconnect] Cancellate ${docs.length} credenziali auth da Firestore`);
           }
         }
       } catch (e) {
@@ -107,8 +121,6 @@ export function createWebServer(options = {}) {
         </html>
       `);
 
-      // 3. Killa il processo dopo 2 secondi — Render lo riavvia automaticamente
-      //    Al riavvio, senza credenziali in Firestore, genererà un nuovo QR
       setTimeout(() => {
         console.log('🔄 [Reconnect] Killing process — Render lo riavvierà...');
         process.exit(0);
@@ -127,7 +139,7 @@ export function createWebServer(options = {}) {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.set('Content-Type', 'text/html; charset=utf-8');
 
-    if (!qrCode && status === 'READY') {
+    if (status === 'READY' || status === 'CONNECTED') {
       return res.status(200).send(`
         <!DOCTYPE html>
         <html lang="it">
@@ -147,7 +159,7 @@ export function createWebServer(options = {}) {
             <div class="card">
               <h1>✅ WhatsApp Client Connected</h1>
               <p><span class="status">Stato: ${status}</span></p>
-              <p>Il bot è attivo (chiavi da Firestore) e pronto a gestire la lista della spesa.</p>
+              <p>Il bot è attivo e pronto a gestire la lista della spesa.</p>
               <p><small>Uptime: ${Math.floor(process.uptime())}s</small></p>
             </div>
           </body>
@@ -156,13 +168,17 @@ export function createWebServer(options = {}) {
     }
 
     if (qrCode) {
+      const imgSrc = qrCode.startsWith('data:image')
+        ? qrCode
+        : `https://api.qrserver.com/v1/create-qr-code/?size=300x300&amp;data=${encodeURIComponent(qrCode)}`;
+
       return res.status(200).send(`
         <!DOCTYPE html>
         <html lang="it">
           <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta http-equiv="refresh" content="5">
+            <meta http-equiv="refresh" content="10">
             <title>WhatsApp Bot - Scansiona QR Code</title>
             <style>
               body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; text-align: center; padding: 40px 20px; margin: 0; }
@@ -175,7 +191,8 @@ export function createWebServer(options = {}) {
             <div class="card">
               <h1>📱 WhatsApp Web QR Code</h1>
               <p>Inquadra il codice per collegare il bot. Le chiavi verranno salvate su Firestore per i futuri avvii!</p>
-              <img src="${qrCode}" alt="WhatsApp QR Code" width="300" height="300" />
+              <img src="${imgSrc}" alt="WhatsApp QR Code" width="300" height="300" />
+              <div style="display:none" data-qr="${qrCode}">${qrCode}</div>
               <ol>
                 <li>Apri <strong>WhatsApp</strong> sul tuo telefono</li>
                 <li>Vai in <strong>Impostazioni / Menu</strong> > <strong>Dispositivi collegati</strong></li>
@@ -193,7 +210,7 @@ export function createWebServer(options = {}) {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="refresh" content="3">
+          <meta http-equiv="refresh" content="5">
           <title>WhatsApp Bot - Inizializzazione</title>
           <style>
             body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; text-align: center; padding: 50px 20px; margin: 0; }
@@ -204,7 +221,7 @@ export function createWebServer(options = {}) {
         </head>
         <body>
           <div class="card">
-            <h1>⏳ Avvio in corso...</h1>
+            <h1>⏳ Inizializzazione WhatsApp Client...</h1>
             <div class="spinner"></div>
             <p>Generazione del QR Code in corso, oppure caricamento delle chiavi da Firestore...</p>
           </div>
@@ -218,12 +235,14 @@ export function createWebServer(options = {}) {
   // Ping ESTERNO ogni 5 minuti per tenere il servizio SEMPRE sveglio.
   app.startKeepAlive = (port) => {
     const INTERVAL_MS = 5 * 60 * 1000; // 5 minuti
-    const EXTERNAL_URL = 'https://whatsapp-shopping-list.onrender.com/health';
+    const baseUrl = process.env.RENDER_EXTERNAL_URL
+      ? process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')
+      : 'https://whatsapp-shopping-list.onrender.com';
+    const EXTERNAL_URL = `${baseUrl}/health`;
     const LOCAL_URL = `http://localhost:${port}/health`;
 
     const doPing = async () => {
       try {
-        // Ping esterno (è quello che conta per Render)
         const res = await fetch(EXTERNAL_URL);
         const data = await res.json();
         console.log(`🏓 [Keep-Alive] Ping ESTERNO OK — uptime: ${Math.floor(data.uptime)}s, WA: ${data.whatsappStatus}`);
@@ -238,9 +257,7 @@ export function createWebServer(options = {}) {
       }
     };
 
-    // Primo ping dopo 30 secondi dall'avvio
     setTimeout(doPing, 30 * 1000);
-    // Poi ogni 5 minuti
     setInterval(doPing, INTERVAL_MS);
 
     console.log(`🏓 [Keep-Alive] Auto-ping attivato ogni 5 minuti → ${EXTERNAL_URL}`);
@@ -248,3 +265,25 @@ export function createWebServer(options = {}) {
 
   return app;
 }
+
+export async function startWebServer(port = 0, options = {}) {
+  const app = createWebServer(options);
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, () => {
+      const addr = server.address();
+      const actualPort = typeof addr === 'object' && addr ? addr.port : port;
+      resolve({ server, port: actualPort, app });
+    });
+    server.on('error', reject);
+  });
+}
+
+export async function stopWebServer(server) {
+  if (!server) return;
+  return new Promise((resolve) => {
+    server.close(() => {
+      resolve();
+    });
+  });
+}
+
