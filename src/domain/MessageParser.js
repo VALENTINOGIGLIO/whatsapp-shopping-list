@@ -27,6 +27,8 @@ export class MessageParser {
     // 1. Help Commands
 
     // 0. Avvia/Ferma Legacy Commands
+    const cleanLower = lower.startsWith('/') ? lower.substring(1).trim() : lower;
+
     if (lower === '/avvia' || lower === '/ferma') {
       return {
         command: 'legacy_toggle',
@@ -37,7 +39,7 @@ export class MessageParser {
       };
     }
 
-    if (['help', 'aiuto', '?', 'info'].includes(lower)) {
+    if (['help', 'aiuto', '?', 'info'].includes(cleanLower)) {
       return {
         command: 'help',
         type: CommandType.HELP,
@@ -48,7 +50,14 @@ export class MessageParser {
     }
 
     // 2. Query List Commands
-    if (['list', 'lista', 'mostra', 'mostra lista', 'show list', 'shopping list'].includes(lower)) {
+    if (
+      ['list', 'lista', 'mostra', 'mostra lista', 'show list', 'shopping list'].includes(cleanLower) ||
+      cleanLower.startsWith('lista supermercat') ||
+      cleanLower.startsWith('lista per supermercat') ||
+      cleanLower.startsWith('list store') ||
+      cleanLower.startsWith('list by store') ||
+      cleanLower.startsWith('mostra supermercat')
+    ) {
       return {
         command: 'list',
         type: CommandType.GET_LIST,
@@ -59,7 +68,7 @@ export class MessageParser {
     }
 
     // 3. Query Habits Commands
-    if (['habits', 'abitudini', 'preferenze', 'statistiche', 'stats'].includes(lower)) {
+    if (['habits', 'abitudini', 'preferenze', 'statistiche', 'stats'].includes(cleanLower)) {
       return {
         command: 'habits',
         type: CommandType.GET_HABITS,
@@ -69,7 +78,7 @@ export class MessageParser {
       };
     }
 
-    if (lower.startsWith('habits ') || lower.startsWith('abitudini ') || lower.startsWith('preferenze ')) {
+    if (cleanLower.startsWith('habits ') || cleanLower.startsWith('abitudini ') || cleanLower.startsWith('preferenze ')) {
       const spaceIdx = trimmed.indexOf(' ');
       const item = trimmed.substring(spaceIdx + 1).trim();
       return {
@@ -83,8 +92,8 @@ export class MessageParser {
     }
 
     // 4. Reset Command
-    if (lower === 'reset' || lower.startsWith('reset ')) {
-      if (lower === 'reset') {
+    if (cleanLower === 'reset' || cleanLower.startsWith('reset ') || cleanLower === 'svuota' || cleanLower.startsWith('svuota ')) {
+      if (cleanLower === 'reset' || cleanLower === 'svuota') {
         return {
           command: 'reset',
           type: CommandType.RESET_LIST,
@@ -95,7 +104,7 @@ export class MessageParser {
         };
       }
 
-      const rest = trimmed.substring(5).trim();
+      const rest = trimmed.replace(/^\/?(?:reset|svuota)\s+/i, '').trim();
       // Strip optional leading prepositions (@, at, da, in, -)
       const cleanStore = rest.replace(/^(@|at|da|in|-)\s+/i, '').trim();
       

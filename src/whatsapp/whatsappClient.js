@@ -10,18 +10,83 @@ import { createWebServer } from '../web/server.js';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
+export function extractMessageText(msg) {
+  if (!msg) return null;
+  if (typeof msg.body === 'string' && msg.body.trim()) return msg.body;
+  if (typeof msg.text === 'string' && msg.text.trim()) return msg.text;
+  if (typeof msg.conversation === 'string' && msg.conversation.trim()) return msg.conversation;
+
+  let m = msg.message;
+  if (!m) return null;
+
+  while (m) {
+    if (m.ephemeralMessage?.message) {
+      m = m.ephemeralMessage.message;
+    } else if (m.viewOnceMessage?.message) {
+      m = m.viewOnceMessage.message;
+    } else if (m.viewOnceMessageV2?.message) {
+      m = m.viewOnceMessageV2.message;
+    } else if (m.viewOnceMessageV2Extension?.message) {
+      m = m.viewOnceMessageV2Extension.message;
+    } else if (m.documentWithCaptionMessage?.message) {
+      m = m.documentWithCaptionMessage.message;
+    } else if (m.protocolMessage?.editedMessage) {
+      m = m.protocolMessage.editedMessage;
+    } else if (m.editedMessage?.message) {
+      m = m.editedMessage.message;
+    } else if (m.message && typeof m.message === 'object') {
+      m = m.message;
+    } else {
+      break;
+    }
+  }
+
+  if (!m) return null;
+  if (typeof m.conversation === 'string') return m.conversation;
+  if (typeof m.extendedTextMessage?.text === 'string') return m.extendedTextMessage.text;
+  if (typeof m.imageMessage?.caption === 'string') return m.imageMessage.caption;
+  if (typeof m.videoMessage?.caption === 'string') return m.videoMessage.caption;
+  if (typeof m.documentMessage?.caption === 'string') return m.documentMessage.caption;
+  if (typeof m.buttonsResponseMessage?.selectedDisplayText === 'string') return m.buttonsResponseMessage.selectedDisplayText;
+  if (typeof m.buttonsResponseMessage?.selectedButtonId === 'string') return m.buttonsResponseMessage.selectedButtonId;
+  if (typeof m.templateButtonReplyMessage?.selectedDisplayText === 'string') return m.templateButtonReplyMessage.selectedDisplayText;
+  if (typeof m.templateButtonReplyMessage?.selectedId === 'string') return m.templateButtonReplyMessage.selectedId;
+  if (typeof m.listResponseMessage?.title === 'string') return m.listResponseMessage.title;
+  if (typeof m.listResponseMessage?.singleSelectReply?.selectedRowId === 'string') return m.listResponseMessage.singleSelectReply.selectedRowId;
+  if (typeof m.listResponseMessage?.singleSelectReply?.title === 'string') return m.listResponseMessage.singleSelectReply.title;
+  if (typeof m.interactiveResponseMessage?.body?.text === 'string') return m.interactiveResponseMessage.body.text;
+  if (typeof m.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson === 'string') {
+    try {
+      const params = JSON.parse(m.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+      if (params?.id) return params.id;
+      if (params?.text) return params.text;
+      if (params?.title) return params.title;
+      if (params?.name) return params.name;
+    } catch (_) {}
+  }
+  if (typeof m.interactiveMessage?.body?.text === 'string') return m.interactiveMessage.body.text;
+
+  return null;
+}
+
 export class WhatsAppClientWrapper {
   constructor(options = {}) {
     this.status = 'INITIALIZING';
     this.qrCode = null;
     this.qrCodeDataURL = null;
+    this.chatId = options.chatId || null;
     this.lastTargetChatId = options.defaultRecipient || 'family_chat';
-    this.allowSelfMessages = true;
+    this.allowSelfMessages = options.allowSelfMessages !== undefined
+      ? Boolean(options.allowSelfMessages)
+      : (options.client ? false : true);
+    this.defaultActive = options.defaultActive !== undefined
+      ? Boolean(options.defaultActive)
+      : (options.client ? true : false);
     this.showTerminalQr = options.showTerminalQr !== false;
     this.shoppingListService = options.service || options.shoppingListService || new ShoppingListService(new FirestoreAdapter());
     this.sock = null;
     this.client = options.client || null;
-    this.activeSessions = new Set();
+    this.activeSessions = new Set(options.activeSessions || []);
 
     if (this.client) {
       this.client.on('qr', (qr) => {
@@ -91,13 +156,15 @@ export class WhatsAppClientWrapper {
   }
 
   async _sendReply(msg, from, response) {
+    if (!response) return;
+    const target = from || msg?.from || msg?.key?.remoteJid || this.lastTargetChatId || 'family_chat';
     try {
-      if (typeof msg.reply === 'function') {
+      if (typeof msg?.reply === 'function') {
         await msg.reply(response);
       } else if (this.client && typeof this.client.sendMessage === 'function') {
-        await this.client.sendMessage(from, response);
+        await this.client.sendMessage(target, response);
       } else if (this.sock && typeof this.sock.sendMessage === 'function') {
-        await this.sock.sendMessage(from, { text: response });
+        await this.sock.sendMessage(target, { text: response });
       }
     } catch (replyErr) {
       console.error('Error sending reply:', replyErr);
@@ -108,11 +175,15 @@ export class WhatsAppClientWrapper {
     if (!msg || typeof msg !== 'object') return null;
 
     const fromMe = Boolean(msg.fromMe || msg.key?.fromMe);
-    let text = typeof msg.body === 'string' ? msg.body : (msg.text || msg.message?.conversation || msg.message?.extendedTextMessage?.text || null);
+    const text = extractMessageText(msg);
     if (!text || typeof text !== 'string' || text.trim() === '') return null;
 
     const from = msg.from || msg.key?.remoteJid || 'family_chat';
-    const senderName = msg._data?.notifyName || msg.pushName || msg.sender || from;
+    if (from === 'status@broadcast' || from.endsWith('@broadcast')) {
+      return null;
+    }
+
+    const senderName = msg._data?.notifyName || msg.pushName || msg.key?.participant || msg.participant || msg.sender || (fromMe ? 'Me' : from);
 
     this.lastTargetChatId = from;
     const targetChat = this.chatId || 'family_chat';
@@ -121,42 +192,65 @@ export class WhatsAppClientWrapper {
       return null;
     }
 
-    if (fromMe && /^[✅❌🟢🔴🤖🛒🏪📊]/.test(text.trim())) {
-      return null;
-    }
-
-    let response = '';
-
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
 
-    if (lower === '/avvia') {
+    // Prevent self-message loops from bot responses
+    const isBotGenerated = /^[✅❌🟢🔴🤖🛒🏪📊]/u.test(trimmed) ||
+      trimmed.startsWith('Spesa completata') ||
+      trimmed.startsWith('Aggiunto alla lista') ||
+      trimmed.startsWith('*Shopping List') ||
+      trimmed.startsWith('*Lista per Supermercati*') ||
+      trimmed.startsWith('Shopping list is empty');
+
+    if (fromMe && isBotGenerated) {
+      return null;
+    }
+
+    const normalizedCmd = lower.replace(/\s+/g, ' ');
+    const isAvvia = [
+      '/avvia', '!/avvia', '!avvia', '!!/avvia', '!!avvia', '! /avvia', '! avvia',
+      '/start', '!start', '!/start', '!!start', '!!/start', '! /start', '! start'
+    ].includes(normalizedCmd);
+
+    const isFerma = [
+      '/ferma', '!/ferma', '!ferma', '!!/ferma', '!!ferma', '! /ferma', '! ferma',
+      '/stop', '!stop', '!/stop', '!!stop', '!!/stop', '! /stop', '! stop'
+    ].includes(normalizedCmd);
+
+    if (isAvvia) {
       this.activeSessions.add(from);
       const r = '🟢 Modalità Spesa ATTIVATA in questa chat.\nOra tutto quello che scrivi verrà aggiunto direttamente alla lista! (Scrivi /ferma per disabilitare)';
       await this._sendReply(msg, from, r);
       return r;
-    } else if (lower === '/ferma') {
+    } else if (isFerma) {
       this.activeSessions.delete(from);
       const r = '🔴 Modalità Spesa DISATTIVATA in questa chat.\nI messaggi normali verranno di nuovo ignorati.';
       await this._sendReply(msg, from, r);
       return r;
     }
 
-    let isSessionActive = this.activeSessions.has(from);
+    const isSessionActive = this.activeSessions.has(from) || Boolean(this.defaultActive);
     let commandText = text;
+    let hasPrefix = false;
 
-    if (!isSessionActive) {
-      if (lower.startsWith('!!')) {
-        commandText = text.substring(2).trim();
-      } else if (lower.startsWith('!')) {
-        commandText = text.substring(1).trim();
-      } else {
-        return null;
-      }
+    if (lower.startsWith('!!')) {
+      hasPrefix = true;
+      commandText = text.substring(2).trim();
+    } else if (lower.startsWith('!')) {
+      hasPrefix = true;
+      commandText = text.substring(1).trim();
     }
+
+    let response = '';
 
     try {
       const parsed = MessageParser.parse(commandText);
+
+      // If session is not active and no prefix was used, ignore normal add-item messages
+      if (!isSessionActive && !hasPrefix && parsed.command === 'add') {
+        return null;
+      }
 
       if (parsed.command === 'legacy_toggle') {
         response = '🟢 *Novità!* Il bot è stato aggiornato ed è ora **SEMPRE ATTIVO**.\nNon c\'è più bisogno di scrivere /avvia o /ferma.\nScrivi semplicemente il nome del prodotto per aggiungerlo alla lista!';
@@ -195,7 +289,7 @@ export class WhatsAppClientWrapper {
         response = `Spesa completata${storeText}! La lista è stata svuotata (${result.itemsCleared} articoli).`;
       } else {
         // Add item
-        const itemName = parsed.item || text.trim();
+        const itemName = parsed.item || commandText.trim();
         const storeName = parsed.store || null;
 
         const result = await this.shoppingListService.addItem(targetChat, itemName, storeName, senderName);
@@ -270,9 +364,15 @@ export class WhatsAppClientWrapper {
     });
 
     this.sock.ev.on('messages.upsert', async (m) => {
-      const msg = m.messages[0];
-      if (!msg || !msg.message) return;
-      await this.handleIncomingMessage(msg);
+      if (!m || !m.messages || !Array.isArray(m.messages)) return;
+      for (const msg of m.messages) {
+        if (!msg || (!msg.message && !msg.body && !msg.text && !msg.conversation)) continue;
+        try {
+          await this.handleIncomingMessage(msg);
+        } catch (err) {
+          console.error('Error handling incoming message from upsert:', err);
+        }
+      }
     });
   }
 }
