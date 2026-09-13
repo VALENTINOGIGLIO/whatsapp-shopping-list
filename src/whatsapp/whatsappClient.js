@@ -157,7 +157,10 @@ export class WhatsAppClientWrapper {
 
   async _sendReply(msg, from, response) {
     if (!response) return;
-    const target = from || msg?.from || msg?.key?.remoteJid || this.lastTargetChatId || 'family_chat';
+    let target = from || msg?.from || msg?.key?.remoteJid || this.lastTargetChatId || 'family_chat';
+    if (this.sock && this.sock.user && target.includes(this.sock.user.id.split(':')[0])) {
+      target = this.sock.user.id;
+    }
     try {
       if (typeof msg?.reply === 'function') {
         await msg.reply(response);

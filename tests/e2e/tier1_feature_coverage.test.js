@@ -194,8 +194,8 @@ describe('Tier 1: Feature Coverage (>=5 test cases per feature)', () => {
       assert.equal(parsed.item, 'cioccolato');
     });
 
-    test('T1.4.2: Parse add command with store ("cioccolato eurospin")', () => {
-      const parsed = MessageParser.parse('cioccolato eurospin');
+    test('T1.4.2: Parse add command with store ("cioccolato @ eurospin")', () => {
+      const parsed = MessageParser.parse('cioccolato @ eurospin');
       assert.equal(parsed.command, 'add');
       assert.equal(parsed.item, 'cioccolato');
       assert.equal(parsed.store, 'eurospin');
