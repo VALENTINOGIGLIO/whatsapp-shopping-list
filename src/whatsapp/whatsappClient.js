@@ -142,8 +142,8 @@ export class WhatsAppClientWrapper {
   getStatus() {
     if (this.status === 'READY') {
       if (this.sock?.ws) {
-        // WebSocket readyState: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
-        if (this.sock.ws.readyState !== 1) {
+        const isSocketOpen = Boolean(this.sock.ws.isOpen || this.sock.ws.socket?.readyState === 1);
+        if (!isSocketOpen) {
           return 'DISCONNECTED';
         }
       }
