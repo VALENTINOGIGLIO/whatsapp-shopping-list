@@ -191,7 +191,7 @@ describe('Empirical Challenger: Milestone 4 Stress & Resilience Suite', () => {
       const requests = items.map((item, i) => {
         return clientWrapper.handleIncomingMessage({
           body: `${item} store${i % 3}`,
-          from: `user${i}@c.us`,
+          from: 'family_chat',
           _data: { notifyName: `User${i}` },
           reply: async (text) => { replies.push(text); }
         });

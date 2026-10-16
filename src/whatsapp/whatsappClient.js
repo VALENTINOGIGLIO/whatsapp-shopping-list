@@ -86,7 +86,9 @@ export class WhatsAppClientWrapper {
     this.shoppingListService = options.service || options.shoppingListService || new ShoppingListService(new FirestoreAdapter());
     this.sock = null;
     this.client = options.client || null;
-    this.activeSessions = new Set(options.activeSessions || []);
+    const PRIMARY_GROUP = '120363410246350492@g.us';
+    this.activeSessions = new Set(options.activeSessions !== undefined ? options.activeSessions : [PRIMARY_GROUP]);
+    this._reconnectTimer = null;
 
     if (this.client) {
       this.client.on('qr', (qr) => {
@@ -121,7 +123,31 @@ export class WhatsAppClientWrapper {
     }
   }
 
+  async loadActiveSessions() {
+    const PRIMARY_GROUP = '120363410246350492@g.us';
+    try {
+      if (this.shoppingListService && typeof this.shoppingListService.getActiveChatSessions === 'function') {
+        const loaded = await this.shoppingListService.getActiveChatSessions();
+        if (Array.isArray(loaded)) {
+          loaded.forEach(chatId => this.activeSessions.add(chatId));
+          console.log(`📋 [Sessions] Loaded ${this.activeSessions.size} active chat session(s):`, Array.from(this.activeSessions));
+        }
+      }
+    } catch (err) {
+      console.error('⚠️ [Sessions] Failed to load active sessions from DB:', err.message);
+    }
+    this.activeSessions.add(PRIMARY_GROUP);
+  }
+
   getStatus() {
+    if (this.status === 'READY') {
+      if (this.sock?.ws) {
+        // WebSocket readyState: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
+        if (this.sock.ws.readyState !== 1) {
+          return 'DISCONNECTED';
+        }
+      }
+    }
     return this.status || (this.sock ? 'READY' : 'INITIALIZING');
   }
 
@@ -130,7 +156,7 @@ export class WhatsAppClientWrapper {
   }
 
   isReady() {
-    return this.status === 'READY';
+    return this.getStatus() === 'READY';
   }
 
   getClient() {
@@ -189,7 +215,7 @@ export class WhatsAppClientWrapper {
     const senderName = msg._data?.notifyName || msg.pushName || msg.key?.participant || msg.participant || msg.sender || (fromMe ? 'Me' : from);
 
     this.lastTargetChatId = from;
-    const targetChat = from;
+    const targetChat = this.chatId || from;
 
     if (fromMe && !this.allowSelfMessages) {
       return null;
@@ -223,11 +249,25 @@ export class WhatsAppClientWrapper {
 
     if (isAvvia) {
       this.activeSessions.add(from);
+      try {
+        if (this.shoppingListService && typeof this.shoppingListService.setChatSession === 'function') {
+          await this.shoppingListService.setChatSession(from, true);
+        }
+      } catch (err) {
+        console.error('Error saving active session to DB:', err);
+      }
       const r = '🟢 Modalità Spesa ATTIVATA in questa chat.\nOra tutto quello che scrivi verrà aggiunto direttamente alla lista! (Scrivi /ferma per disabilitare)';
       await this._sendReply(msg, from, r);
       return r;
     } else if (isFerma) {
       this.activeSessions.delete(from);
+      try {
+        if (this.shoppingListService && typeof this.shoppingListService.setChatSession === 'function') {
+          await this.shoppingListService.setChatSession(from, false);
+        }
+      } catch (err) {
+        console.error('Error saving deactivated session to DB:', err);
+      }
       const r = '🔴 Modalità Spesa DISATTIVATA in questa chat.\nI messaggi normali verranno di nuovo ignorati.';
       await this._sendReply(msg, from, r);
       return r;
@@ -295,13 +335,30 @@ export class WhatsAppClientWrapper {
         const itemName = parsed.item || commandText.trim();
         const storeName = parsed.store || null;
 
-        await this.shoppingListService.addItem(targetChat, itemName, storeName, senderName);
+        const result = await this.shoppingListService.addItem(targetChat, itemName, storeName, senderName);
+        const storeInfo = (result && result.item && result.item.store) ? ` (${result.item.store})` : '';
+        const confirmationMsg = `✅ Aggiunto alla lista: ${(result && result.item && result.item.name) || itemName}${storeInfo}`;
+
+        let reacted = false;
         if (typeof msg.react === 'function') {
           await msg.react('✅');
+          reacted = true;
         } else if (this.sock && msg.key) {
           await this.sock.sendMessage(from, { react: { text: '✅', key: msg.key } });
+          reacted = true;
         }
-        response = null;
+
+        if (!reacted) {
+          response = confirmationMsg;
+        } else {
+          response = null;
+        }
+
+        if (response) {
+          await this._sendReply(msg, from, response);
+        }
+
+        return confirmationMsg;
       }
     } catch (err) {
       console.error('Error processing message in handleIncomingMessage:', err);
@@ -317,6 +374,8 @@ export class WhatsAppClientWrapper {
 
   async initialize() {
     this.status = 'INITIALIZING';
+    await this.loadActiveSessions();
+
     let db = null;
     if (this.shoppingListService.db && typeof this.shoppingListService.db._getDb === 'function') {
       db = await this.shoppingListService.db._getDb();
@@ -338,6 +397,15 @@ export class WhatsAppClientWrapper {
 
     const logger = pino({ level: 'silent' });
 
+    // Clean up existing socket before creating a new one
+    if (this.sock) {
+      try {
+        this.sock.ev?.removeAllListeners?.();
+        this.sock.ws?.close?.();
+      } catch (_) {}
+      this.sock = null;
+    }
+
     this.sock = makeWASocket({
       auth: state,
       printQRInTerminal: this.showTerminalQr,
@@ -357,10 +425,25 @@ export class WhatsAppClientWrapper {
 
       if (connection === 'close') {
         this.status = 'DISCONNECTED';
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         console.log('❌ [WhatsApp] Connection closed due to', lastDisconnect?.error?.message, ', reconnecting:', shouldReconnect);
+        
+        if (this.sock) {
+          try {
+            this.sock.ev?.removeAllListeners?.();
+            this.sock.ws?.close?.();
+          } catch (_) {}
+          this.sock = null;
+        }
+
         if (shouldReconnect) {
-          this.initialize();
+          if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+          this._reconnectTimer = setTimeout(() => {
+            this.initialize().catch(err => {
+              console.error('❌ [WhatsApp] Reconnect error:', err);
+            });
+          }, 3000);
         }
       } else if (connection === 'open') {
         this.status = 'READY';

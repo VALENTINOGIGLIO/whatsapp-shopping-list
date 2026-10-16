@@ -14,8 +14,8 @@ describe('Unit Test: MessageParser', () => {
     assert.equal(parsed.isValid, true);
   });
 
-  test('Parses add item command with store ("cioccolato eurospin")', () => {
-    const parsed = MessageParser.parse('cioccolato eurospin');
+  test('Parses add item command with store ("cioccolato @ eurospin")', () => {
+    const parsed = MessageParser.parse('cioccolato @ eurospin');
     assert.equal(parsed.command, 'add');
     assert.equal(parsed.type, CommandType.ADD_ITEM);
     assert.equal(parsed.item, 'cioccolato');

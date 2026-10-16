@@ -4,3 +4,11 @@ node_modules/
 .env
 .mock_db.json
 .cache/
+coverage/
+.DS_Store
+*.cjs
+reset_auth.js
+reset_auth_chunks.js
+test-*.js
+check_db.js
+

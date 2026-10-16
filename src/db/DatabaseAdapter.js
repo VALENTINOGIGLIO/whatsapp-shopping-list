@@ -45,4 +45,16 @@ export class DatabaseAdapter {
   async clear(chatId) {
     return await this.clearAllData(chatId);
   }
+
+  async getChatSession(chatId) {
+    throw new Error('DatabaseAdapter.getChatSession() must be implemented by subclass.');
+  }
+
+  async saveChatSession(chatId, sessionData) {
+    throw new Error('DatabaseAdapter.saveChatSession() must be implemented by subclass.');
+  }
+
+  async getActiveChatSessions() {
+    throw new Error('DatabaseAdapter.getActiveChatSessions() must be implemented by subclass.');
+  }
 }

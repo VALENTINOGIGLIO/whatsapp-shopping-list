@@ -6,6 +6,7 @@ export class MockDatabaseAdapter extends DatabaseAdapter {
     this.activeItems = {}; // { chatId: [] }
     this.habits = {}; // { chatId: Map }
     this.history = {}; // { chatId: [] }
+    this.chatSessions = {}; // { chatId: { active: boolean, updatedAt: string } }
 
     if (initialData && typeof initialData === 'object') {
       if (initialData.activeItems) {
@@ -205,11 +206,51 @@ export class MockDatabaseAdapter extends DatabaseAdapter {
       this.activeItems[chatId] = [];
       this.habits[chatId] = new Map();
       this.history[chatId] = [];
+      delete this.chatSessions[chatId];
     } else {
       this.activeItems = {};
       this.habits = {};
       this.history = {};
+      this.chatSessions = {};
     }
+  }
+
+  async getChatSession(chatId) {
+    if (!chatId) return null;
+    return this.chatSessions[chatId] || null;
+  }
+
+  async saveChatSession(chatId, sessionData = {}) {
+    if (!chatId) return null;
+    const nowIso = new Date().toISOString();
+    this.chatSessions[chatId] = {
+      ...this.chatSessions[chatId],
+      ...sessionData,
+      updatedAt: sessionData.updatedAt || nowIso
+    };
+    return this.chatSessions[chatId];
+  }
+
+  async getActiveChatSessions() {
+    const active = new Set();
+    for (const [cid, session] of Object.entries(this.chatSessions)) {
+      if (session && session.active === true) {
+        active.add(cid);
+      }
+    }
+    for (const [cid, items] of Object.entries(this.activeItems)) {
+      if (items && items.length > 0) {
+        if (!this.chatSessions[cid] || this.chatSessions[cid].active !== false) {
+          active.add(cid);
+        }
+      }
+    }
+    // Always include primary group unless explicitly false
+    const PRIMARY_GROUP = '120363410246350492@g.us';
+    if (!this.chatSessions[PRIMARY_GROUP] || this.chatSessions[PRIMARY_GROUP].active !== false) {
+      active.add(PRIMARY_GROUP);
+    }
+    return Array.from(active);
   }
 }
 

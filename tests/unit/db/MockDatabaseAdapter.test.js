@@ -106,4 +106,20 @@ describe('Unit Test: MockDatabaseAdapter', () => {
     assert.equal((await customDb.getHabit('pasta')).favoriteStore, 'coop');
     assert.equal((await customDb.getPurchaseHistory()).length, 1);
   });
+
+  test('Save, retrieve, and query active chat sessions', async () => {
+    const chatDb = new MockDatabaseAdapter();
+    assert.equal(await chatDb.getChatSession('chat_1'), null);
+
+    await chatDb.saveChatSession('chat_1', { active: true });
+    const s1 = await chatDb.getChatSession('chat_1');
+    assert.equal(s1.active, true);
+    assert.ok(s1.updatedAt);
+
+    await chatDb.saveChatSession('chat_2', { active: false });
+    const activeSessions = await chatDb.getActiveChatSessions();
+    assert.ok(activeSessions.includes('chat_1'));
+    assert.ok(!activeSessions.includes('chat_2'));
+    assert.ok(activeSessions.includes('120363410246350492@g.us'));
+  });
 });

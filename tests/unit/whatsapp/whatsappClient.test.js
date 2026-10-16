@@ -76,7 +76,7 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     const mockMsg = {
       from: '123456789@c.us',
       fromMe: false,
-      body: 'pane eurospin',
+      body: 'pane @ eurospin',
       _data: { notifyName: 'Mario' },
       reply: async (text) => {
         repliedText = text;
@@ -88,7 +88,7 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     assert.ok(repliedText.includes('pane'));
     assert.ok(repliedText.includes('eurospin'));
 
-    const items = await service.getList();
+    const items = await service.getList('123456789@c.us');
     assert.equal(items.length, 1);
     assert.equal(items[0].name, 'pane');
     assert.equal(items[0].store, 'eurospin');
@@ -100,7 +100,7 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     const broadcaster = new MockBroadcaster();
     const service = new ShoppingListService(db, broadcaster);
 
-    await service.addItem('latte', 'esselunga', 'Mario');
+    await service.addItem('123456789@c.us', 'latte', 'esselunga', 'Mario');
 
     const wrapper = new WhatsAppClientWrapper({
       client: mockClient,
@@ -124,7 +124,7 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     assert.ok(repliedText.includes('Spesa completata'));
     assert.ok(repliedText.includes('ESSELUNGA'));
 
-    const items = await service.getList();
+    const items = await service.getList('123456789@c.us');
     assert.equal(items.length, 0);
   });
 
@@ -134,7 +134,7 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     const broadcaster = new MockBroadcaster();
     const service = new ShoppingListService(db, broadcaster);
 
-    await service.addItem('mela', 'coop', 'Mario');
+    await service.addItem('123456789@c.us', 'mela', 'coop', 'Mario');
 
     const wrapper = new WhatsAppClientWrapper({
       client: mockClient,
@@ -164,7 +164,7 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
     const broadcaster = new MockBroadcaster();
     const service = new ShoppingListService(db, broadcaster);
 
-    await service.addItem('pane', 'coop', 'Mario');
+    await service.addItem('123456789@c.us', 'pane', 'coop', 'Mario');
 
     const wrapper = new WhatsAppClientWrapper({
       client: mockClient,

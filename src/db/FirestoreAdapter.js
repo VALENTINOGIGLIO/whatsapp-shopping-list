@@ -223,5 +223,91 @@ export class FirestoreAdapter extends DatabaseAdapter {
     await deleteColl(habitsColl);
     await deleteColl(historyColl);
   }
+
+  async getChatSession(chatId) {
+    if (!chatId) return null;
+    await this._getDb();
+    try {
+      const doc = await this.db.collection('chats').doc(chatId).get();
+      if (!doc.exists) return null;
+      return doc.data();
+    } catch (err) {
+      console.error(`[FirestoreAdapter] Error getting chat session for ${chatId}:`, err);
+      return null;
+    }
+  }
+
+  async saveChatSession(chatId, sessionData = {}) {
+    if (!chatId) return null;
+    await this._getDb();
+    const nowIso = new Date().toISOString();
+    const data = {
+      ...sessionData,
+      updatedAt: sessionData.updatedAt || nowIso
+    };
+    try {
+      await this.db.collection('chats').doc(chatId).set(data, { merge: true });
+      return data;
+    } catch (err) {
+      console.error(`[FirestoreAdapter] Error saving chat session for ${chatId}:`, err);
+      return null;
+    }
+  }
+
+  async getActiveChatSessions() {
+    await this._getDb();
+    const activeSessions = new Set();
+    const PRIMARY_GROUP = '120363410246350492@g.us';
+
+    try {
+      if (typeof this.db.collection('chats').listDocuments === 'function') {
+        const docRefs = await this.db.collection('chats').listDocuments();
+        for (const ref of docRefs) {
+          try {
+            const docSnap = await ref.get();
+            const data = docSnap.exists ? docSnap.data() : null;
+            if (data && data.active === true) {
+              activeSessions.add(ref.id);
+            } else if (data && data.active === false) {
+              // Explicitly deactivated chat
+              continue;
+            } else {
+              // Check if shopping_list has items
+              const listSnap = await ref.collection('shopping_list').limit(1).get();
+              if (listSnap && !listSnap.empty) {
+                activeSessions.add(ref.id);
+              }
+            }
+          } catch (e) {
+            console.error(`[FirestoreAdapter] Error inspecting chat doc ${ref.id}:`, e.message);
+          }
+        }
+      } else {
+        const snapshot = await this.db.collection('chats').get();
+        if (snapshot && snapshot.forEach) {
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data && data.active === true) {
+              activeSessions.add(doc.id);
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[FirestoreAdapter] Error fetching active chat sessions:', err);
+    }
+
+    // Ensure primary group list is included unless explicitly deactivated
+    try {
+      const primaryDoc = await this.db.collection('chats').doc(PRIMARY_GROUP).get();
+      if (!primaryDoc.exists || primaryDoc.data()?.active !== false) {
+        activeSessions.add(PRIMARY_GROUP);
+      }
+    } catch (_) {
+      activeSessions.add(PRIMARY_GROUP);
+    }
+
+    return Array.from(activeSessions);
+  }
 }
 

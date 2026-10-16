@@ -328,5 +328,26 @@ export class ShoppingListService {
 
     return lines.join('\n').trim();
   }
+
+  async getChatSession(chatId) {
+    if (this.db && typeof this.db.getChatSession === 'function') {
+      return await this.db.getChatSession(chatId);
+    }
+    return null;
+  }
+
+  async setChatSession(chatId, active) {
+    if (this.db && typeof this.db.saveChatSession === 'function') {
+      return await this.db.saveChatSession(chatId, { active: Boolean(active), updatedAt: new Date().toISOString() });
+    }
+    return null;
+  }
+
+  async getActiveChatSessions() {
+    if (this.db && typeof this.db.getActiveChatSessions === 'function') {
+      return await this.db.getActiveChatSessions();
+    }
+    return [];
+  }
 }
 

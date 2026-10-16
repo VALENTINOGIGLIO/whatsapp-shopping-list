@@ -137,14 +137,14 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     // 2. Prefix with ! -> processed
     const msg2 = {
       key: { remoteJid: userJid, fromMe: false },
-      message: { conversation: '!latte eurospin' }
+      message: { conversation: '!latte @ eurospin' }
     };
     const res2 = await wrapper.handleIncomingMessage(msg2);
     assert.ok(res2.includes('Aggiunto alla lista: latte (eurospin)'));
     assert.equal(sentReplies.length, 1);
     assert.equal(sentReplies[0].to, userJid);
 
-    const items = await service.getList();
+    const items = await service.getList(userJid);
     assert.equal(items.length, 1);
     assert.equal(items[0].name, 'latte');
     assert.equal(items[0].store, 'eurospin');
@@ -176,11 +176,11 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     // Send plain grocery item
     const res = await wrapper.handleIncomingMessage({
       key: { remoteJid: userJid, fromMe: false },
-      message: { conversation: 'cioccolato conad' }
+      message: { conversation: 'cioccolato @ conad' }
     });
 
     assert.ok(res.includes('Aggiunto alla lista: cioccolato (conad)'));
-    const items = await service.getList();
+    const items = await service.getList(userJid);
     assert.equal(items.length, 1);
     assert.equal(items[0].name, 'cioccolato');
     assert.equal(items[0].store, 'conad');
@@ -257,7 +257,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     }
 
     // Verify only the user's item is in the list
-    const items = await service.getList();
+    const items = await service.getList(myJid);
     assert.equal(items.length, 1);
     assert.equal(items[0].name, 'biscotti');
   });
@@ -271,7 +271,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
 
     const userJid = '39333123456@s.whatsapp.net';
 
-    await service.addItem('pasta', 'de cecco', 'user1');
+    await service.addItem(userJid, 'pasta', 'de cecco', 'user1');
 
     // List
     const listRes = await wrapper.handleIncomingMessage({
@@ -339,7 +339,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
       assert.ok(res.startsWith('✅ Aggiunto alla lista:'));
     }
 
-    const items = await service.getList();
+    const items = await service.getList(myJid);
     assert.equal(items.length, emojiFoodItems.length);
   });
 
@@ -540,7 +540,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     });
     const userJid = '39333123456@s.whatsapp.net';
 
-    await service.addItem('biscotti', 'coop', 'user');
+    await service.addItem(userJid, 'biscotti', 'coop', 'user');
 
     // /help
     const helpRes = await wrapper.handleIncomingMessage({
@@ -569,7 +569,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
       message: { conversation: '/reset' }
     });
     assert.ok(resetRes.includes('Spesa completata'));
-    const items = await service.getList();
+    const items = await service.getList(userJid);
     assert.equal(items.length, 0);
   });
 
@@ -581,8 +581,8 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     });
     const userJid = '39333123456@s.whatsapp.net';
 
-    await service.addItem('pasta', 'barilla', 'user');
-    await service.addItem('mele', 'coop', 'user');
+    await service.addItem(userJid, 'pasta', 'barilla', 'user');
+    await service.addItem(userJid, 'mele', 'coop', 'user');
 
     const res1 = await wrapper.handleIncomingMessage({
       key: { remoteJid: userJid, fromMe: false },
@@ -654,6 +654,48 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
       }
     };
     assert.equal(extractMessageText(nativeFlowTitleMsg), 'button clicked');
+  });
+
+  it('persists session activation and deactivation to database and auto-restores on loadActiveSessions', async () => {
+    const mockDb = new MockDatabaseAdapter();
+    const svc = new ShoppingListService(mockDb);
+    const wrapper = new WhatsAppClientWrapper({
+      service: svc,
+      allowSelfMessages: true,
+      defaultActive: false,
+      activeSessions: []
+    });
+
+    const testChat = 'test_chat_persistence@g.us';
+
+    // 1. /avvia activates and saves to db
+    await wrapper.handleIncomingMessage({
+      key: { remoteJid: testChat, fromMe: false },
+      message: { conversation: '/avvia' }
+    });
+    assert.ok(wrapper.activeSessions.has(testChat));
+    const sessionDoc1 = await mockDb.getChatSession(testChat);
+    assert.equal(sessionDoc1.active, true);
+
+    // 2. Simulate new process / reboot: create a new wrapper and call loadActiveSessions()
+    const newWrapper = new WhatsAppClientWrapper({
+      service: svc,
+      allowSelfMessages: true,
+      defaultActive: false,
+      activeSessions: []
+    });
+    await newWrapper.loadActiveSessions();
+    assert.ok(newWrapper.activeSessions.has(testChat));
+    assert.ok(newWrapper.activeSessions.has('120363410246350492@g.us'));
+
+    // 3. /ferma deactivates and saves to db
+    await newWrapper.handleIncomingMessage({
+      key: { remoteJid: testChat, fromMe: false },
+      message: { conversation: '/ferma' }
+    });
+    assert.ok(!newWrapper.activeSessions.has(testChat));
+    const sessionDoc2 = await mockDb.getChatSession(testChat);
+    assert.equal(sessionDoc2.active, false);
   });
 });
 
