@@ -238,16 +238,9 @@ export class MockDatabaseAdapter extends DatabaseAdapter {
         active.add(cid);
       }
     }
-    for (const [cid, items] of Object.entries(this.activeItems)) {
-      if (items && items.length > 0) {
-        if (!this.chatSessions[cid] || this.chatSessions[cid].active !== false) {
-          active.add(cid);
-        }
-      }
-    }
     // Always include primary group unless explicitly false
     const PRIMARY_GROUP = '120363410246350492@g.us';
-    if (!this.chatSessions[PRIMARY_GROUP] || this.chatSessions[PRIMARY_GROUP].active !== false) {
+    if (!this.chatSessions[PRIMARY_GROUP] || this.chatSessions[PRIMARY_GROUP].active === true) {
       active.add(PRIMARY_GROUP);
     }
     return Array.from(active);

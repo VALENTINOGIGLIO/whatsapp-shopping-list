@@ -129,8 +129,9 @@ export class WhatsAppClientWrapper {
       if (this.shoppingListService && typeof this.shoppingListService.getActiveChatSessions === 'function') {
         const loaded = await this.shoppingListService.getActiveChatSessions();
         if (Array.isArray(loaded)) {
-          loaded.forEach(chatId => this.activeSessions.add(chatId));
+          this.activeSessions = new Set(loaded);
           console.log(`📋 [Sessions] Loaded ${this.activeSessions.size} active chat session(s):`, Array.from(this.activeSessions));
+          return;
         }
       }
     } catch (err) {
@@ -274,6 +275,12 @@ export class WhatsAppClientWrapper {
     }
 
     const isSessionActive = this.activeSessions.has(from) || Boolean(this.defaultActive);
+
+    // If session is NOT active, completely ignore ALL messages (no replies, no reactions)
+    if (!isSessionActive) {
+      return null;
+    }
+
     let commandText = text;
     let hasPrefix = false;
 
@@ -290,13 +297,8 @@ export class WhatsAppClientWrapper {
     try {
       const parsed = MessageParser.parse(commandText);
 
-      // If session is not active and no prefix was used, ignore normal add-item messages
-      if (!isSessionActive && !hasPrefix && parsed.command === 'add') {
-        return null;
-      }
-
       if (parsed.command === 'legacy_toggle') {
-        response = '🟢 *Novità!* Il bot è stato aggiornato ed è ora **SEMPRE ATTIVO**.\nNon c\'è più bisogno di scrivere /avvia o /ferma.\nScrivi semplicemente il nome del prodotto per aggiungerlo alla lista!';
+        response = '🟢 Modalità Spesa già attiva in questa chat.\nScrivi il nome di un articolo per aggiungerlo alla lista, oppure scrivi /ferma per disabilitare.';
       } else if (parsed.command === 'help') {
         response = '🤖 *WhatsApp Shopping List Bot*\n' +
           '- *Aggiungere un articolo*: scrivi il nome del prodotto (es. "latte", "pane eurospin")\n' +

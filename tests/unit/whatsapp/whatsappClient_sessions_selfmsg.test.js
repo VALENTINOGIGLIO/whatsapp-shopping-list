@@ -108,7 +108,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     assert.equal(sentReplies[0].to, userJid);
   });
 
-  it('ignores plain text when session is NOT active, but processes ! prefix', async () => {
+  it('ignores plain text and ! prefix when session is NOT active', async () => {
     const sentReplies = [];
     const mockSock = {
       sendMessage: async (to, payload) => {
@@ -134,20 +134,17 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     assert.equal(res1, null);
     assert.equal(sentReplies.length, 0);
 
-    // 2. Prefix with ! -> processed
+    // 2. Prefix with ! without active session -> ignored
     const msg2 = {
       key: { remoteJid: userJid, fromMe: false },
       message: { conversation: '!latte @ eurospin' }
     };
     const res2 = await wrapper.handleIncomingMessage(msg2);
-    assert.ok(res2.includes('Aggiunto alla lista: latte (eurospin)'));
-    assert.equal(sentReplies.length, 1);
-    assert.equal(sentReplies[0].to, userJid);
+    assert.equal(res2, null);
+    assert.equal(sentReplies.length, 0);
 
     const items = await service.getList(userJid);
-    assert.equal(items.length, 1);
-    assert.equal(items[0].name, 'latte');
-    assert.equal(items[0].store, 'eurospin');
+    assert.equal(items.length, 0);
   });
 
   it('adds items with plain text when session IS active', async () => {
@@ -262,7 +259,7 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     assert.equal(items[0].name, 'biscotti');
   });
 
-  it('routes explicit commands (list, reset, habits, help) even without active session', async () => {
+  it('ignores explicit commands (list, reset, habits, help) when session is not active, but processes them after /avvia', async () => {
     const wrapper = new WhatsAppClientWrapper({
       service,
       allowSelfMessages: true,
@@ -273,27 +270,51 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
 
     await service.addItem(userJid, 'pasta', 'de cecco', 'user1');
 
-    // List
+    // 1. Without active session -> all ignored
+    const listIgnored = await wrapper.handleIncomingMessage({
+      key: { remoteJid: userJid, fromMe: false },
+      message: { conversation: 'lista' }
+    });
+    assert.equal(listIgnored, null);
+
+    const helpIgnored = await wrapper.handleIncomingMessage({
+      key: { remoteJid: userJid, fromMe: false },
+      message: { conversation: 'aiuto' }
+    });
+    assert.equal(helpIgnored, null);
+
+    const resetIgnored = await wrapper.handleIncomingMessage({
+      key: { remoteJid: userJid, fromMe: false },
+      message: { conversation: 'reset' }
+    });
+    assert.equal(resetIgnored, null);
+
+    // 2. Activate session with /avvia
+    const avviaRes = await wrapper.handleIncomingMessage({
+      key: { remoteJid: userJid, fromMe: false },
+      message: { conversation: '/avvia' }
+    });
+    assert.ok(avviaRes.includes('Modalità Spesa ATTIVATA'));
+
+    // 3. Now commands work
     const listRes = await wrapper.handleIncomingMessage({
       key: { remoteJid: userJid, fromMe: false },
       message: { conversation: 'lista' }
     });
     assert.ok(listRes.includes('pasta'));
 
-    // Help
     const helpRes = await wrapper.handleIncomingMessage({
       key: { remoteJid: userJid, fromMe: false },
       message: { conversation: 'aiuto' }
     });
     assert.ok(helpRes.includes('WhatsApp Shopping List Bot'));
 
-    // Reset
     const resetRes = await wrapper.handleIncomingMessage({
       key: { remoteJid: userJid, fromMe: false },
       message: { conversation: 'reset' }
     });
     assert.ok(resetRes.includes('Spesa completata'));
-    const itemsAfter = await service.getList();
+    const itemsAfter = await service.getList(userJid);
     assert.equal(itemsAfter.length, 0);
   });
 
@@ -413,9 +434,15 @@ describe('Unit Test: WhatsAppClientWrapper Sessions & Self-Messages', () => {
     const res2 = await wrapper.handleIncomingMessage({ key: { remoteJid: chat2, fromMe: true }, message: { conversation: 'latte' } });
     assert.equal(res2, null);
 
-    // Chat 2 sends with ! prefix -> processed
+    // Chat 2 (inactive) sends with ! prefix -> also ignored because chat is not active
     const res3 = await wrapper.handleIncomingMessage({ key: { remoteJid: chat2, fromMe: true }, message: { conversation: '!latte' } });
-    assert.ok(res3.includes('latte'));
+    assert.equal(res3, null);
+
+    // Chat 2 activates with /avvia -> now item can be added
+    await wrapper.handleIncomingMessage({ key: { remoteJid: chat2, fromMe: true }, message: { conversation: '/avvia' } });
+    assert.ok(wrapper.activeSessions.has(chat2));
+    const res3b = await wrapper.handleIncomingMessage({ key: { remoteJid: chat2, fromMe: true }, message: { conversation: 'latte' } });
+    assert.ok(res3b.includes('latte'));
 
     // Chat 1 stops session
     await wrapper.handleIncomingMessage({ key: { remoteJid: chat1, fromMe: false, participant: '393331@s.whatsapp.net' }, message: { conversation: '/ferma' } });

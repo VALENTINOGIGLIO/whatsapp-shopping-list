@@ -268,15 +268,6 @@ export class FirestoreAdapter extends DatabaseAdapter {
             const data = docSnap.exists ? docSnap.data() : null;
             if (data && data.active === true) {
               activeSessions.add(ref.id);
-            } else if (data && data.active === false) {
-              // Explicitly deactivated chat
-              continue;
-            } else {
-              // Check if shopping_list has items
-              const listSnap = await ref.collection('shopping_list').limit(1).get();
-              if (listSnap && !listSnap.empty) {
-                activeSessions.add(ref.id);
-              }
             }
           } catch (e) {
             console.error(`[FirestoreAdapter] Error inspecting chat doc ${ref.id}:`, e.message);
@@ -300,7 +291,9 @@ export class FirestoreAdapter extends DatabaseAdapter {
     // Ensure primary group list is included unless explicitly deactivated
     try {
       const primaryDoc = await this.db.collection('chats').doc(PRIMARY_GROUP).get();
-      if (!primaryDoc.exists || primaryDoc.data()?.active !== false) {
+      if (!primaryDoc.exists) {
+        activeSessions.add(PRIMARY_GROUP);
+      } else if (primaryDoc.data()?.active === true) {
         activeSessions.add(PRIMARY_GROUP);
       }
     } catch (_) {
