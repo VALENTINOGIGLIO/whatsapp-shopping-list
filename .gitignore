@@ -1,7 +1,9 @@
 node_modules/
 .wwebjs_auth/
 .wwebjs_cache/
-.env
+.env*
+auth_info*
+*.log
 .mock_db.json
 .cache/
 coverage/
@@ -11,4 +13,5 @@ reset_auth.js
 reset_auth_chunks.js
 test-*.js
 check_db.js
+
 

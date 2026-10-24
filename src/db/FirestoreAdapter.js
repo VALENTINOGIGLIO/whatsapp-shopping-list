@@ -257,7 +257,7 @@ export class FirestoreAdapter extends DatabaseAdapter {
   async getActiveChatSessions() {
     await this._getDb();
     const activeSessions = new Set();
-    const PRIMARY_GROUP = '120363410246350492@g.us';
+    const PRIMARY_GROUP = process.env.PRIMARY_GROUP_ID || '120363410246350492@g.us';
 
     try {
       if (typeof this.db.collection('chats').listDocuments === 'function') {

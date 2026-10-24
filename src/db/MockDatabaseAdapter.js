@@ -239,7 +239,7 @@ export class MockDatabaseAdapter extends DatabaseAdapter {
       }
     }
     // Always include primary group unless explicitly false
-    const PRIMARY_GROUP = '120363410246350492@g.us';
+    const PRIMARY_GROUP = process.env.PRIMARY_GROUP_ID || '120363410246350492@g.us';
     if (!this.chatSessions[PRIMARY_GROUP] || this.chatSessions[PRIMARY_GROUP].active === true) {
       active.add(PRIMARY_GROUP);
     }

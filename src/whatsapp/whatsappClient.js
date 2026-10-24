@@ -86,9 +86,11 @@ export class WhatsAppClientWrapper {
     this.shoppingListService = options.service || options.shoppingListService || new ShoppingListService(new FirestoreAdapter());
     this.sock = null;
     this.client = options.client || null;
-    const PRIMARY_GROUP = '120363410246350492@g.us';
+    const PRIMARY_GROUP = process.env.PRIMARY_GROUP_ID || '120363410246350492@g.us';
     this.activeSessions = new Set(options.activeSessions !== undefined ? options.activeSessions : [PRIMARY_GROUP]);
     this._reconnectTimer = null;
+    this._qrTimer = null;
+    this._isShuttingDown = false;
 
     if (this.client) {
       this.client.on('qr', (qr) => {
@@ -123,8 +125,29 @@ export class WhatsAppClientWrapper {
     }
   }
 
+  async shutdown(signal = 'SIGTERM') {
+    console.log(`🛑 [WhatsApp] Received ${signal}, shutting down gracefully...`);
+    this._isShuttingDown = true;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    if (this._qrTimer) {
+      clearTimeout(this._qrTimer);
+      this._qrTimer = null;
+    }
+    if (this.sock) {
+      try {
+        this.sock.end(undefined);
+      } catch (err) {
+        // Socket closed cleanly without session deletion
+      }
+    }
+    process.exit(0);
+  }
+
   async loadActiveSessions() {
-    const PRIMARY_GROUP = '120363410246350492@g.us';
+    const PRIMARY_GROUP = process.env.PRIMARY_GROUP_ID || '120363410246350492@g.us';
     try {
       if (this.shoppingListService && typeof this.shoppingListService.getActiveChatSessions === 'function') {
         const loaded = await this.shoppingListService.getActiveChatSessions();
@@ -376,6 +399,11 @@ export class WhatsAppClientWrapper {
 
   async initialize() {
     this.status = 'INITIALIZING';
+    if (!this._signalsRegistered && typeof process !== 'undefined') {
+      this._signalsRegistered = true;
+      process.on('SIGTERM', () => this.shutdown('SIGTERM'));
+      process.on('SIGINT', () => this.shutdown('SIGINT'));
+    }
     await this.loadActiveSessions();
 
     let db = null;
@@ -428,8 +456,6 @@ export class WhatsAppClientWrapper {
       if (connection === 'close') {
         this.status = 'DISCONNECTED';
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        console.log('❌ [WhatsApp] Connection closed due to', lastDisconnect?.error?.message, ', reconnecting:', shouldReconnect);
         
         if (this.sock) {
           try {
@@ -438,6 +464,31 @@ export class WhatsAppClientWrapper {
           } catch (_) {}
           this.sock = null;
         }
+
+        if (this._isShuttingDown) {
+          console.log('🛑 [WhatsApp] Shutting down, skipping reconnect.');
+          return;
+        }
+
+        if (statusCode === DisconnectReason.connectionReplaced) {
+          console.log('⚠️ [WhatsApp] Connessione rilevata da un\'altra istanza attiva (440 connectionReplaced).');
+          if (process.env.EXIT_ON_CONFLICT === 'true') {
+            console.log('🚪 [WhatsApp] EXIT_ON_CONFLICT=true: chiusura immediata per cedere il passo.');
+            process.exit(0);
+          } else {
+            console.log('⏳ [WhatsApp] Attendo 30 secondi prima di eventuale retry dopo connectionReplaced...');
+            if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = setTimeout(() => {
+              this.initialize().catch(err => {
+                console.error('❌ [WhatsApp] Reconnect error:', err);
+              });
+            }, 30000);
+            return;
+          }
+        }
+
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        console.log('❌ [WhatsApp] Connection closed due to', lastDisconnect?.error?.message, ', reconnecting:', shouldReconnect);
 
         if (shouldReconnect) {
           if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
@@ -485,6 +536,9 @@ const isMainModule = (metaUrl) => {
 if (isMainModule(import.meta.url)) {
   const port = process.env.PORT || 3000;
   const app = createWebServer({ whatsappClient });
+
+  process.on('SIGTERM', () => whatsappClient.shutdown('SIGTERM'));
+  process.on('SIGINT', () => whatsappClient.shutdown('SIGINT'));
   
   app.listen(port, '0.0.0.0', () => {
     console.log(`🌐 [Web Server] Started on port ${port}`);

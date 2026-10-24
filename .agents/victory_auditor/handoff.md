@@ -1,49 +1,37 @@
-# Victory Audit Handoff Report
+# VICTORY AUDIT HANDOFF REPORT
 
 ## 1. Observation
-- **Project Location**: `/Users/gi/teamwork_projects/whatsapp_shopping_list`
-- **Original Request File**: `ORIGINAL_REQUEST.md` (Integrity mode: `development`)
-- **Codebase Inventory**:
-  - `src/domain/`: `ShoppingListService.js`, `HabitTracker.js`, `MessageParser.js`, `CommandType.js`
-  - `src/db/`: `DatabaseAdapter.js`, `MockDatabaseAdapter.js`, `FirestoreAdapter.js`
-  - `src/broadcaster/`: `NotificationBroadcaster.js`, `MockBroadcaster.js`, `WhatsAppBroadcaster.js`
-  - `src/whatsapp/`: `whatsappClient.js`
-  - `src/web/`: `server.js` (Express `/health` & `/qr` endpoints)
-  - `bin/cli.js`: Standalone CLI runner with full option parsing and state persistence
-  - `DEPLOYMENT.md`: 414-line comprehensive Render deployment, Firebase configuration, keep-alive, and QR code guide
-- **Test Executions**:
-  - `npm test`: Executed 49/49 opaque-box E2E test cases across Tiers 1-4 (Duration: 116ms, 0 failures, 0 skipped).
-  - `npm run test:all`: Executed 49/49 E2E test cases (Duration: 129ms, 0 failures).
-  - `node --test tests/challenger_m4_stress.test.js tests/unit/**/*.test.js`: Executed 47 unit test cases + stress tests (Duration: 536ms, 0 failures).
-  - Total test coverage: 96 unit/integration/stress/E2E test cases passing.
+- **Original Task**: Resolve message handling failures in `src/whatsapp/whatsappClient.js`. Specifically, handle `/avvia`, `/ferma`, and standard text messages, support self-messages (`fromMe: true`) without creating infinite loops, and reply to the correct `remoteJid` using `sock.sendMessage`.
+- **Source Code Verification**:
+  - `src/whatsapp/whatsappClient.js`: Contains `extractMessageText(msg)` supporting Baileys message shapes (conversation, extendedTextMessage, ephemeralMessage, viewOnceMessage, protocolMessage editedMessage, buttonsResponseMessage, listResponseMessage, interactiveResponseMessage).
+  - `handleIncomingMessage`: Correctly processes `fromMe` when `allowSelfMessages: true` (default for Baileys wrapper). Self-message loops are suppressed strictly by matching bot response signatures (`^[✅❌🟢🔴🤖🛒🏪📊]`, `Spesa completata`, `Aggiunto alla lista`, `*Shopping List`, `*Lista per Supermercati*`, `Shopping list is empty`).
+  - `_sendReply`: Dispatches replies to `target = from || msg?.from || msg?.key?.remoteJid || this.lastTargetChatId || 'family_chat'` via `this.sock.sendMessage(target, { text: response })` or `msg.reply(response)`.
+  - `activeSessions`: Tracks active chat sessions initialized via `/avvia`, `!/avvia`, `!avvia`, `/start` and stopped via `/ferma`, `!/ferma`, `!ferma`, `/stop`.
+- **Test Execution**:
+  - `node --test tests/e2e/*.test.js tests/unit/**/*.test.js tests/*.test.js` executed 187 tests across 33 suites.
+  - Results: `tests 187, suites 33, pass 187, fail 0, cancelled 0, skipped 0, todo 0`.
+- **Forensic Check**: No hardcoded test results, no facade implementations, no pre-populated log files or attestation artifacts.
 
 ## 2. Logic Chain
-- **Phase A (Timeline & Provenance Audit)**: Inspected file modification timestamps across `src/`, `bin/`, `tests/`, and documentation (`PROJECT.md`, `DEPLOYMENT.md`). Verified realistic chronological progression from M1 (~17:42) through M5 (~17:55). No clustering anomalies or pre-populated result artifacts detected.
-- **Phase B (Forensic Integrity Check)**: Analyzed codebase for prohibited patterns under `development` integrity mode:
-  1. No hardcoded test return values or static pass strings found.
-  2. No facade implementations or dummy stubs; domain logic in `ShoppingListService` and `HabitTracker` calculates item frequency, favorite stores, and handles deterministic tie-breaking.
-  3. No pre-populated result logs or fake verification outputs.
-  4. Standard libraries (`whatsapp-web.js`, `firebase-admin`, `express`) are utilized legitimately as transport & cloud storage components per requirements R1 & R2.
-- **Phase C (Independent Execution & Requirement Validation)**:
-  - R1 (WhatsApp Integration): Implemented via `whatsapp-web.js` with `WhatsAppClientWrapper` handling `message` events, QR generation, session persistence, and commands.
-  - R2 (Cloud Database): Implemented via `FirestoreAdapter` (and `MockDatabaseAdapter` fallback), supporting active list persistence, habit tracking, and reset history logging.
-  - R3 (List Management & Journaling): `addItem`, `resetList` with optional store parameters, auto-inferring favorite store when omitted, updating habit frequency on purchase/reset, logging purchase history records, and broadcasting notification messages.
-  - Acceptance Criteria: All 4 acceptance criteria (simulated add item, simulated add item with store, simulated reset with broadcast notification, cloud deployment & QR documentation) are 100% verified and covered by tests.
+1. *Observation*: The user prompt required resolving silent failure where `/avvia` and incoming grocery items were ignored or failed to reply.
+2. *Deduction*: `handleIncomingMessage` now accurately unrolls nested Baileys payload wrappers (`extractMessageText`), manages chat session state (`activeSessions`), and allows self-messages while filtering out bot-generated responses.
+3. *Observation*: Replies are sent to the caller's `remoteJid` using Baileys socket method `sock.sendMessage(target, { text })`.
+4. *Deduction*: When a user or self-chat sends `/avvia`, the session is activated and the activation message `🟢 Modalità Spesa ATTIVATA...` is dispatched. When subsequent items are sent, they are persisted and confirmed with `✅ Aggiunto alla lista...`.
+5. *Observation*: Comprehensive test suites (`whatsappClient_sessions_selfmsg.test.js`, `adversarial_r2_challenger2.test.js`, and Tier 1–4 e2e tests) all execute and pass.
+6. *Conclusion*: All acceptance criteria and requirements are completely and authentically satisfied.
 
 ## 3. Caveats
-- Physical QR code scanning with a live mobile device and connection to a live Firebase instance were not executed during automated audit, but the CLI/Mock test runner and full HTTP unit/stress test suites validate all logic pathways programmatically as specified in acceptance criteria.
+- No live WhatsApp network connection or real phone QR scanning was performed (and is impossible in an automated CI environment); all Baileys socket interactions and message upsert events are verified using structured test harnesses and mock sockets.
+- No other caveats.
 
 ## 4. Conclusion
-The implementation is genuine, clean, fully functional, and completely matches all specifications of `ORIGINAL_REQUEST.md`. Verdict: **VICTORY CONFIRMED**.
+**VICTORY CONFIRMED**. The implementation is genuine, complete, and robust. All requirements and acceptance criteria have been verified independently.
 
 ## 5. Verification Method
-To independently re-verify the test results:
+Run the canonical test command independently from repository root:
 ```bash
-cd /Users/gi/teamwork_projects/whatsapp_shopping_list
-npm test
 npm run test:all
-node --test tests/challenger_m4_stress.test.js tests/unit/**/*.test.js
-node bin/cli.js add "cioccolato eurospin"
-node bin/cli.js list
-node bin/cli.js reset eurospin
+# Or full test suite:
+node --test tests/e2e/*.test.js tests/unit/**/*.test.js tests/*.test.js
 ```
+Expected output: 187 passing tests with 0 failures.

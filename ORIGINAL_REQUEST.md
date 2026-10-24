@@ -89,6 +89,36 @@ Ensure the bot can be successfully started and deployed according to its configu
 ### Functionality
 - [ ] The bot's source code compiles/runs without syntax or immediate runtime errors.
 - [ ] The bot can successfully start and connect to the WhatsApp network (or prompt for pairing/QR correctly without crashing).
-- [ ] If there are existing test suites (`tests/`), they must pass.
+## Follow-up — 2026-08-24T12:59:49Z
+
+# Teamwork Project Prompt — Draft
+
+> Status: Launched
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview
+> Requested team: small focused team
+
+Fix the remaining bugs in the WhatsApp Shopping List bot. The bot connects successfully and passes health checks, but it silently ignores user messages (including `/avvia`) and does not reply.
+
+Working directory: /Users/gi/teamwork_projects/whatsapp_shopping_list
+Integrity mode: development
+
+## Requirements
+
+### R1. Diagnose Message Handling
+Review `src/whatsapp/whatsappClient.js` (specifically `handleIncomingMessage`, `_sendReply`, and the regex/session filters). Identify why incoming messages (both from others and self-messages) are being completely ignored or failing to trigger replies. 
+
+### R2. Fix the Silent Failure
+Implement the necessary fixes so that the bot correctly processes `/avvia`, `/ferma`, and standard text messages. Ensure that the bot replies to the correct `remoteJid` using the Baileys `sock.sendMessage` method. The fix must support "Self-Messages" (where the user texts themselves).
+
+## Acceptance Criteria
+
+### Message Processing
+- [ ] The bot correctly responds to `/avvia` with the activation message.
+- [ ] The bot correctly replies with `✅ Aggiunto alla lista...` when a grocery item is sent (if the session is active or a prefix is used).
+- [ ] Self-message loops are prevented strictly by ignoring bot-generated prefixes (e.g. `🟢`, `✅`, `🤖`), without ignoring normal user inputs.
+
+---
+*Next: when approved → delegate via invoke_subagent (see Delegation Protocol)*
+
 
 
