@@ -4,15 +4,15 @@
     {
       "itemName": "mele",
       "stores": {
-        "coop": 44,
+        "coop": 46,
         "conad": 1
       },
       "storeHistory": {
-        "coop": 44,
+        "coop": 46,
         "conad": 1
       },
       "favoriteStore": "coop",
-      "lastUpdated": "2026-08-23T09:42:48.429Z"
+      "lastUpdated": "2026-10-24T19:51:39.013Z"
     },
     {
       "itemName": "cioccolato",
@@ -647,6 +647,27 @@
       "timestamp": "2026-08-23T09:42:48.429Z",
       "resetAt": "2026-08-23T09:42:48.429Z",
       "itemsCleared": 3
+    },
+    {
+      "id": "reset_1792871499013_7qvk5",
+      "items": [
+        {
+          "id": "item_1792871498952_mo48k",
+          "name": "mele",
+          "canonicalName": "mele",
+          "store": "coop",
+          "storeInferred": false,
+          "addedBy": "cli_user",
+          "createdAt": "2026-10-24T19:51:38.952Z"
+        }
+      ],
+      "store": "coop",
+      "storeName": "coop",
+      "resetBy": "cli_user",
+      "clearedBy": "cli_user",
+      "timestamp": "2026-10-24T19:51:39.013Z",
+      "resetAt": "2026-10-24T19:51:39.013Z",
+      "itemsCleared": 1
     }
   ]
 }

@@ -2,6 +2,11 @@ name: Cloud Runner 24/7 (Self-Healing Backup)
 
 on:
   workflow_dispatch:
+    inputs:
+      handoff_from:
+        description: 'Run ID of the runner performing handoff'
+        required: false
+        default: ''
   schedule:
     - cron: '*/15 * * * *'
   push:
@@ -22,9 +27,15 @@ jobs:
         run: |
           echo "🔍 Evaluating pre-flight conditions..."
 
-          # 1. Check if another cloud-runner is in_progress
-          ACTIVE_RUNS=$(gh run list --repo VALENTINOGIGLIO/whatsapp-shopping-list --workflow=cloud-runner.yml --status=in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length" || echo "0")
-          echo "Active runners count (excluding self): $ACTIVE_RUNS"
+          HANDOFF_FROM="${{ inputs.handoff_from }}"
+          if [ -n "$HANDOFF_FROM" ]; then
+            echo "🤝 Handoff detected from previous run $HANDOFF_FROM. Waiting 10s for clean socket closure..."
+            sleep 10
+            ACTIVE_RUNS=$(gh run list --repo VALENTINOGIGLIO/whatsapp-shopping-list --workflow=cloud-runner.yml --status=in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }} and (.databaseId | tostring) != \"$HANDOFF_FROM\")] | length" || echo "0")
+          else
+            ACTIVE_RUNS=$(gh run list --repo VALENTINOGIGLIO/whatsapp-shopping-list --workflow=cloud-runner.yml --status=in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length" || echo "0")
+          fi
+          echo "Active runners count (excluding self and handoff): $ACTIVE_RUNS"
 
           if [ "$ACTIVE_RUNS" -gt 0 ]; then
             echo "✅ Another cloud-runner instance is already active ($ACTIVE_RUNS running). Skipping runner."
@@ -142,6 +153,6 @@ jobs:
           wait $BOT_PID 2>/dev/null || true
           sleep 2
 
-          echo "🚀 Triggering next cloud-runner workflow cycle..."
-          gh workflow run cloud-runner.yml --ref main --repo VALENTINOGIGLIO/whatsapp-shopping-list
-          echo "✅ Next cycle successfully dispatched."
+          echo "🚀 Triggering next cloud-runner workflow cycle passing handoff_from=${{ github.run_id }}..."
+          gh workflow run cloud-runner.yml --ref main --repo VALENTINOGIGLIO/whatsapp-shopping-list -f handoff_from="${{ github.run_id }}"
+          echo "✅ Next cycle successfully dispatched with handoff parameter."
