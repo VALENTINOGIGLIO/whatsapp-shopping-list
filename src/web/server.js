@@ -244,6 +244,9 @@ export function createWebServer(options = {}) {
     const doPing = async () => {
       try {
         const res = await fetch(EXTERNAL_URL);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         const data = await res.json();
         console.log(`🏓 [Keep-Alive] Ping ESTERNO OK — uptime: ${Math.floor(data.uptime)}s, WA: ${data.whatsappStatus}`);
       } catch (err) {

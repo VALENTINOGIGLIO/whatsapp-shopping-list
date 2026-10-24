@@ -9,7 +9,49 @@ on:
       - main
 
 jobs:
+  preflight:
+    name: Pre-flight Guard (Concurrency & Failover)
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.guard.outputs.should_run }}
+    steps:
+      - name: Check Active Runners & Render Status
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "🔍 Evaluating pre-flight conditions..."
+
+          # 1. Check if another cloud-runner is in_progress
+          ACTIVE_RUNS=$(gh run list --repo VALENTINOGIGLIO/whatsapp-shopping-list --workflow=cloud-runner.yml --status=in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length" || echo "0")
+          echo "Active runners count (excluding self): $ACTIVE_RUNS"
+
+          if [ "$ACTIVE_RUNS" -gt 0 ]; then
+            echo "✅ Another cloud-runner instance is already active ($ACTIVE_RUNS running). Skipping runner."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 2. Check if Render primary instance is active and READY
+          RENDER_CODE=$(curl -s -o /tmp/render_health.json -w "%{http_code}" --max-time 10 https://whatsapp-shopping-list.onrender.com/health || echo "000")
+          if [ "$RENDER_CODE" = "200" ]; then
+            if grep -q '"status":"READY"' /tmp/render_health.json || grep -q '"whatsappStatus":"READY"' /tmp/render_health.json; then
+              echo "✅ Render primary instance is active and READY. Skipping cloud backup."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            else
+              echo "ℹ️ Render returned 200 but WhatsApp status is not READY. Cloud backup runner will start."
+            fi
+          else
+            echo "ℹ️ Render primary instance is suspended/offline (HTTP $RENDER_CODE). Cloud backup runner will start."
+          fi
+
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+
   run-bot:
+    name: WhatsApp Bot Runner (5h Cycle)
+    needs: preflight
+    if: needs.preflight.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -25,32 +67,6 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-
-      - name: Pre-flight Guard (Concurrency & Failover Check)
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          echo "🔍 Running pre-flight guard checks..."
-
-          # 1. Check if another cloud-runner run is already in_progress
-          ACTIVE_RUNS=$(gh run list --workflow=cloud-runner.yml --status=in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length" || echo "0")
-          if [ "$ACTIVE_RUNS" -gt 0 ]; then
-            echo "✅ Another cloud-runner instance is already active ($ACTIVE_RUNS running). Exiting."
-            exit 0
-          fi
-
-          # 2. Check if Render primary instance is online and READY
-          RENDER_CODE=$(curl -s -o /tmp/render_health.json -w "%{http_code}" --max-time 10 https://whatsapp-shopping-list.onrender.com/health || echo "000")
-          if [ "$RENDER_CODE" = "200" ]; then
-            if grep -q '"status":"READY"' /tmp/render_health.json || grep -q '"whatsappStatus":"READY"' /tmp/render_health.json; then
-              echo "✅ Render primary instance is active and READY. Yielding."
-              exit 0
-            else
-              echo "ℹ️ Render returned 200 but WhatsApp is not READY yet. Running cloud backup runner."
-            fi
-          else
-            echo "ℹ️ Render primary instance is not active (HTTP $RENDER_CODE). Cloud backup runner will handle traffic."
-          fi
 
       - name: Install dependencies
         run: npm ci
@@ -127,5 +143,5 @@ jobs:
           sleep 2
 
           echo "🚀 Triggering next cloud-runner workflow cycle..."
-          gh workflow run cloud-runner.yml --ref main
+          gh workflow run cloud-runner.yml --ref main --repo VALENTINOGIGLIO/whatsapp-shopping-list
           echo "✅ Next cycle successfully dispatched."
