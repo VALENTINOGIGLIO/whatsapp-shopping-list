@@ -195,5 +195,44 @@ describe('Unit Test: bin/cli.js', () => {
       assert.ok(stdoutHabits.text.includes('caffè'));
       assert.ok(stdoutHabits.text.includes('favorite store = coop'));
     });
+
+    test('runCli cancella / remove command removes item by name and by index', async () => {
+      const stdoutDummy = createStreamCapturer();
+      const stderrDummy = createStreamCapturer();
+
+      await runCli(['add', 'pane'], { stdout: stdoutDummy.write, stderr: stderrDummy.write, stateFile: testStateFile });
+      await runCli(['add', 'latte'], { stdout: stdoutDummy.write, stderr: stderrDummy.write, stateFile: testStateFile });
+
+      // Remove by name
+      const stdoutRem1 = createStreamCapturer();
+      const stderrRem1 = createStreamCapturer();
+      const code1 = await runCli(['cancella', 'pane'], { stdout: stdoutRem1.write, stderr: stderrRem1.write, stateFile: testStateFile });
+      assert.equal(code1, 0);
+      assert.ok(stdoutRem1.text.includes('Removed "pane"'));
+
+      // Remove by index (1-based, now latte is index 1)
+      const stdoutRem2 = createStreamCapturer();
+      const stderrRem2 = createStreamCapturer();
+      const code2 = await runCli(['remove', '1'], { stdout: stdoutRem2.write, stderr: stderrRem2.write, stateFile: testStateFile });
+      assert.equal(code2, 0);
+      assert.ok(stdoutRem2.text.includes('Removed "latte"'));
+
+      const stateData = JSON.parse(fs.readFileSync(testStateFile, 'utf8'));
+      assert.equal(stateData.activeItems.length, 0);
+    });
+
+    test('runCli cancella with empty argument or non-existent item returns exit code 1', async () => {
+      const stdout = createStreamCapturer();
+      const stderr = createStreamCapturer();
+
+      const codeEmpty = await runCli(['cancella'], { stdout: stdout.write, stderr: stderr.write, stateFile: testStateFile });
+      assert.equal(codeEmpty, 1);
+      assert.ok(stderr.text.includes('cannot be empty'));
+
+      stderr.clear();
+      const codeNotFound = await runCli(['cancella', 'inesistente'], { stdout: stdout.write, stderr: stderr.write, stateFile: testStateFile });
+      assert.equal(codeNotFound, 1);
+      assert.ok(stderr.text.includes('not found'));
+    });
   });
 });

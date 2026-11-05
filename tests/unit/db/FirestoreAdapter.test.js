@@ -115,6 +115,20 @@ describe('Unit Test: FirestoreAdapter', () => {
     assert.equal(items.length, 0);
   });
 
+  test('deleteActiveItem in FirestoreAdapter performs case-insensitive and emoji-tolerant deletion', async () => {
+    await firestoreAdapter.saveActiveItem({ name: 'Latte', canonicalName: 'latte' });
+    await firestoreAdapter.saveActiveItem({ name: '🔴 Pane', canonicalName: '🔴 pane' });
+
+    const del1 = await firestoreAdapter.deleteActiveItem('LATTE');
+    assert.equal(del1, true);
+
+    const del2 = await firestoreAdapter.deleteActiveItem('pane');
+    assert.equal(del2, true);
+
+    const items = await firestoreAdapter.getActiveItems();
+    assert.equal(items.length, 0);
+  });
+
   test('clearAllData in FirestoreAdapter resets all collections', async () => {
     await firestoreAdapter.saveActiveItem({ name: 'mela' });
     await firestoreAdapter.saveHabit({ itemName: 'mela', favoriteStore: 'coop' });

@@ -1,5 +1,6 @@
 import { DatabaseAdapter } from './DatabaseAdapter.js';
 import { getFirestoreInstance } from '../config/firebase.js';
+import { normalizeForComparison } from '../domain/normalize.js';
 
 export class FirestoreAdapter extends DatabaseAdapter {
   /**
@@ -110,9 +111,12 @@ export class FirestoreAdapter extends DatabaseAdapter {
       itemName = arg2;
     }
 
-    if (!itemName || typeof itemName !== 'string') return false;
+    if (!itemName) return false;
     const { shoppingListColl } = await this._getCollections(chatId);
-    const key = itemName.trim().toLowerCase();
+    const key = String(itemName).trim().toLowerCase();
+    const normKey = normalizeForComparison(itemName);
+
+    // 1. Direct lookup by key
     const docRef = shoppingListColl.doc(key);
     const doc = await docRef.get();
     if (doc.exists) {
@@ -120,11 +124,61 @@ export class FirestoreAdapter extends DatabaseAdapter {
         await docRef.delete();
       } else {
         const batch = this.db.batch();
-        batch.delete(docRef);
+        batch.delete(docRef.id ? docRef : { id: key, ref: docRef, ...docRef });
         await batch.commit();
       }
       return true;
     }
+
+    // 2. Direct lookup by normKey if different
+    if (normKey && normKey !== key) {
+      const normRef = shoppingListColl.doc(normKey);
+      const normDoc = await normRef.get();
+      if (normDoc.exists) {
+        if (typeof normRef.delete === 'function') {
+          await normRef.delete();
+        } else {
+          const batch = this.db.batch();
+          batch.delete(normRef.id ? normRef : { id: normKey, ref: normRef, ...normRef });
+          await batch.commit();
+        }
+        return true;
+      }
+    }
+
+    // 3. Fallback: scan collection to match by id, name, canonicalName or normalized comparison
+    const snapshot = await shoppingListColl.get();
+    if (snapshot && snapshot.docs && snapshot.docs.length > 0) {
+      for (const d of snapshot.docs) {
+        const data = typeof d.data === 'function' ? d.data() : d.data;
+        const dId = d.id || (d.ref && d.ref.id);
+        const name = (data && data.name) || '';
+        const canonical = (data && data.canonicalName) || '';
+        const itemId = (data && data.id) || '';
+
+        const isMatch =
+          dId === key ||
+          dId === normKey ||
+          (itemId && itemId === itemName) ||
+          (name && name.toLowerCase() === key) ||
+          (canonical && canonical.toLowerCase() === key) ||
+          (normKey && name && normalizeForComparison(name) === normKey) ||
+          (normKey && canonical && normalizeForComparison(canonical) === normKey);
+
+        if (isMatch) {
+          const targetRef = d.ref || shoppingListColl.doc(dId);
+          if (typeof targetRef.delete === 'function') {
+            await targetRef.delete();
+          } else {
+            const batch = this.db.batch();
+            batch.delete(targetRef.id ? targetRef : { id: dId, ref: targetRef, ...targetRef });
+            await batch.commit();
+          }
+          return true;
+        }
+      }
+    }
+
     return false;
   }
 

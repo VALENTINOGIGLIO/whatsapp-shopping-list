@@ -4,6 +4,7 @@ import pino from 'pino';
 import { ShoppingListService } from '../domain/ShoppingListService.js';
 import { FirestoreAdapter } from '../db/FirestoreAdapter.js';
 import { MessageParser } from '../domain/MessageParser.js';
+import { CommandType } from '../domain/CommandType.js';
 import { useFirestoreAuthState } from './FirestoreAuthState.js';
 import qrcode from 'qrcode';
 import { createWebServer } from '../web/server.js';
@@ -249,7 +250,7 @@ export class WhatsAppClientWrapper {
     const lower = trimmed.toLowerCase();
 
     // Prevent self-message loops from bot responses
-    const isBotGenerated = /^[✅❌🟢🔴🤖🛒🏪📊]/u.test(trimmed) ||
+    const isBotGenerated = /^[✅❌🟢🔴🤖🛒🏪📊🗑️⚠️]/u.test(trimmed) ||
       trimmed.startsWith('Spesa completata') ||
       trimmed.startsWith('Aggiunto alla lista') ||
       trimmed.startsWith('*Shopping List') ||
@@ -326,6 +327,7 @@ export class WhatsAppClientWrapper {
         response = '🤖 *WhatsApp Shopping List Bot*\n' +
           '- *Aggiungere un articolo*: scrivi il nome del prodotto (es. "latte", "pane eurospin")\n' +
           '- *Visualizzare lista*: scrivi "lista" o "list"\n' +
+          '- *Cancellare articoli*: scrivi "cancella [nome o numero]" (es. "cancella latte", "cancella 1" o "cancella 1,2,3")\n' +
           '- *Resettare lista*: scrivi "reset" o "reset [supermercato]"\n' +
           '- *Abitudini*: scrivi "abitudini" o "abitudini [prodotto]"\n' +
           '- *Aiuto*: scrivi "aiuto" o "help"';
@@ -355,6 +357,31 @@ export class WhatsAppClientWrapper {
         const result = await this.shoppingListService.resetList(targetChat, store, senderName);
         const storeText = store ? ` presso ${store.toUpperCase()}` : '';
         response = `Spesa completata${storeText}! La lista è stata svuotata (${result.itemsCleared} articoli).`;
+      } else if (parsed.command === 'remove' || parsed.type === CommandType.REMOVE_ITEM) {
+        const query = parsed.query || parsed.item || (parsed.payload && (parsed.payload.query || parsed.payload.itemName)) || null;
+        if (!query) {
+          response = '⚠️ Specifica cosa cancellare (es. "cancella latte", "cancella 1" o "cancella 1,2,3")';
+        } else {
+          const result = await this.shoppingListService.removeItem(targetChat, query);
+          if (result && result.success) {
+            const removedList = result.removedItems || (result.removedItem ? [result.removedItem] : []);
+            if (removedList.length === 1) {
+              response = `🗑️ Rimosso dalla lista: *${removedList[0].name}*`;
+            } else {
+              const itemLines = removedList.map(i => `• ${i.name}`).join('\n');
+              response = `🗑️ Rimossi dalla lista:\n${itemLines}`;
+            }
+            if (result.invalidIndices && result.invalidIndices.length > 0) {
+              response += `\n⚠️ Indici non validi ignorati: ${result.invalidIndices.join(', ')}`;
+            }
+          } else {
+            if (result && result.reason === 'INVALID_INDEX') {
+              response = '⚠️ Indice non valido nella lista della spesa';
+            } else {
+              response = '⚠️ Articolo non trovato nella lista della spesa';
+            }
+          }
+        }
       } else {
         // Add item
         const itemName = parsed.item || commandText.trim();

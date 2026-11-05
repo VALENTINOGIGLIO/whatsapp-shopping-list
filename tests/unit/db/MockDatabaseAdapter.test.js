@@ -45,6 +45,22 @@ describe('Unit Test: MockDatabaseAdapter', () => {
     assert.equal(items.length, 0);
   });
 
+  test('deleteActiveItem performs case-insensitive and emoji-tolerant deletion', async () => {
+    await db.saveActiveItem({ name: 'Latte Intero', canonicalName: 'latte intero' });
+    await db.saveActiveItem({ name: '🔴 Pane Fresco', canonicalName: '🔴 pane fresco' });
+
+    // Case-insensitive deletion
+    const del1 = await db.deleteActiveItem('LATTE INTERO');
+    assert.equal(del1, true);
+
+    // Emoji-tolerant deletion
+    const del2 = await db.deleteActiveItem('pane fresco');
+    assert.equal(del2, true);
+
+    const remaining = await db.getActiveItems();
+    assert.equal(remaining.length, 0);
+  });
+
   test('Save and retrieve habits', async () => {
     const habit = {
       itemName: 'caffè',

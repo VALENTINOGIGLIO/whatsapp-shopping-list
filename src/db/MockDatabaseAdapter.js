@@ -1,4 +1,5 @@
 import { DatabaseAdapter } from './DatabaseAdapter.js';
+import { normalizeForComparison } from '../domain/normalize.js';
 
 export class MockDatabaseAdapter extends DatabaseAdapter {
   constructor(initialData = {}) {
@@ -129,11 +130,32 @@ export class MockDatabaseAdapter extends DatabaseAdapter {
     }
 
     if (!itemName) return false;
-    const key = itemName.trim().toLowerCase();
+    const key = String(itemName).trim().toLowerCase();
+    const normKey = normalizeForComparison(itemName);
     const items = this._getChatItems(chatId);
-    const initialLength = items.length;
-    this.activeItems[chatId] = items.filter(i => (i.canonicalName !== key && i.name.toLowerCase() !== key));
-    return this.activeItems[chatId].length < initialLength;
+
+    // 1. Try matching by exact item.id
+    const indexById = items.findIndex(i => i.id && i.id === itemName);
+    if (indexById >= 0) {
+      items.splice(indexById, 1);
+      return true;
+    }
+
+    // 2. Match by canonicalName, name, or normalized name
+    const matchIndex = items.findIndex(i => {
+      if (i.canonicalName && i.canonicalName.toLowerCase() === key) return true;
+      if (i.name && i.name.toLowerCase() === key) return true;
+      if (normKey && i.canonicalName && normalizeForComparison(i.canonicalName) === normKey) return true;
+      if (normKey && i.name && normalizeForComparison(i.name) === normKey) return true;
+      return false;
+    });
+
+    if (matchIndex >= 0) {
+      items.splice(matchIndex, 1);
+      return true;
+    }
+
+    return false;
   }
 
   async getHabit(arg1, arg2) {

@@ -70,6 +70,7 @@ Usage:
 
 Commands:
   add <item> [store]       Add an item to the shopping list (with optional store)
+  cancella <item|index>    Remove item(s) by name or numeric index (synonyms: remove, elimina)
   reset [store]            Clear the shopping list and log purchase history
   list                     Display the active shopping list
   habits [item]            Display tracked shopping habits and store preferences
@@ -130,7 +131,8 @@ export async function runCli(args = process.argv.slice(2), options = {}) {
 
   const firstWord = positionals[0].toLowerCase();
   const knownCommands = [
-    'add', 'reset', 'list', 'lista', 'mostra', 'show',
+    'add', 'cancella', 'elimina', 'rimuovi', 'delete', 'remove',
+    'reset', 'list', 'lista', 'mostra', 'show',
     'habits', 'abitudini', 'preferenze', 'stats', 'statistiche',
     'help', 'aiuto', '?'
   ];
@@ -188,6 +190,29 @@ export async function runCli(args = process.argv.slice(2), options = {}) {
       const result = await service.addItem(itemName, storeName, sender);
       const storeStr = result.item.store ? ` (store: ${result.item.store})` : '';
       stdout(`✅ Added "${result.item.name}"${storeStr} to shopping list.`);
+    } else if (['cancella', 'elimina', 'rimuovi', 'delete', 'remove'].includes(firstWord)) {
+      const restText = positionals.slice(1).join(' ').trim();
+      if (!restText) {
+        stderr('Error: Item name or index cannot be empty.');
+        return 1;
+      }
+      const result = await service.removeItem(restText);
+      if (result && result.success) {
+        const removedList = result.removedItems || (result.removedItem ? [result.removedItem] : []);
+        if (removedList.length === 1) {
+          stdout(`🗑️ Removed "${removedList[0].name}" from shopping list.`);
+        } else {
+          const names = removedList.map(i => `• ${i.name}`).join('\n');
+          stdout(`🗑️ Removed items from shopping list:\n${names}`);
+        }
+      } else {
+        if (result && result.reason === 'INVALID_INDEX') {
+          stderr(`Error: Invalid index "${restText}".`);
+        } else {
+          stderr(`Error: Item "${restText}" not found in shopping list.`);
+        }
+        return 1;
+      }
     } else if (firstWord === 'reset') {
       let storeName = flagStore || null;
       if (!storeName) {

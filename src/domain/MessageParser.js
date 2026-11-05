@@ -101,6 +101,25 @@ export class MessageParser {
       };
     }
 
+    const removeMatch = trimmed.match(/^\/?(?:cancella|elimina|rimuovi|delete|remove)(?:\s+(.+))?$/i);
+    if (removeMatch) {
+      const rawArg = removeMatch[1] ? removeMatch[1].trim() : null;
+      const query = rawArg || null;
+      return {
+        command: 'remove',
+        type: CommandType.REMOVE_ITEM,
+        item: query,
+        query: query,
+        raw: text,
+        payload: {
+          query: query,
+          itemName: query,
+          rawText: trimmed
+        },
+        isValid: true
+      };
+    }
+
     const addPayload = MessageParser._parseAddItem(trimmed);
     return {
       command: 'add',

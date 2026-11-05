@@ -1,6 +1,7 @@
 import { MockDatabaseAdapter } from '../db/MockDatabaseAdapter.js';
 import { MockBroadcaster } from '../broadcaster/MockBroadcaster.js';
 import { HabitTracker } from './HabitTracker.js';
+import { normalizeForComparison, parseNumericIndices } from './normalize.js';
 
 function isChatId(str) {
   if (typeof str !== 'string') return false;
@@ -125,16 +126,110 @@ export class ShoppingListService {
 
   async removeItem(arg1, arg2 = null) {
     let chatId = 'family_chat';
-    let itemName = null;
+    let query = null;
+
     if (arg2 !== null && arg2 !== undefined) {
       chatId = arg1 || 'family_chat';
-      itemName = arg2;
+      query = arg2;
     } else {
-      chatId = 'family_chat';
-      itemName = arg1;
+      if (isChatId(arg1)) {
+        chatId = arg1;
+        query = null;
+      } else {
+        chatId = 'family_chat';
+        query = arg1;
+      }
     }
-    if (!itemName) return false;
-    return await this.db.deleteActiveItem(chatId, itemName);
+
+    if (query === null || query === undefined || (typeof query === 'string' && query.trim() === '')) {
+      return { success: false, reason: 'EMPTY_QUERY' };
+    }
+
+    const activeItems = await this.db.getActiveItems(chatId);
+    if (!activeItems || activeItems.length === 0) {
+      return { success: false, reason: 'NOT_FOUND' };
+    }
+
+    const queryString = typeof query === 'string' ? query.trim() : String(query).trim();
+
+    // 1. Check if query is numeric indices (supports "1", "1,2,3", "1 2 3", "1/2/3", "1;3;4", "1-3", etc.)
+    const numericIndices = typeof query === 'number' && Number.isInteger(query)
+      ? [query]
+      : parseNumericIndices(queryString);
+
+    let itemsToRemove = [];
+    let invalidIndices = [];
+
+    if (numericIndices.length > 0) {
+      // Resolve items by 1-based index on activeItems snapshot BEFORE deletion
+      for (const idx of numericIndices) {
+        if (idx >= 1 && idx <= activeItems.length) {
+          const item = activeItems[idx - 1];
+          if (!itemsToRemove.some(it => it.id === item.id && it.name === item.name)) {
+            itemsToRemove.push(item);
+          }
+        } else {
+          invalidIndices.push(idx);
+        }
+      }
+
+      if (itemsToRemove.length === 0) {
+        return { success: false, reason: 'INVALID_INDEX', invalidIndices };
+      }
+    } else {
+      // 2. Query is product name(s)
+      // Check if multiple names separated by [,;/|]
+      const nameTokens = queryString.includes(',') || queryString.includes(';') || queryString.includes('/') || queryString.includes('|')
+        ? queryString.split(/[,;/|]+/).map(s => s.trim()).filter(Boolean)
+        : [queryString];
+
+      for (const token of nameTokens) {
+        const normToken = normalizeForComparison(token);
+        const lowerToken = token.toLowerCase();
+
+        const match = activeItems.find(item => {
+          if (!item) return false;
+          if (itemsToRemove.some(it => it.id === item.id)) return false;
+          if (item.id && item.id === token) return true;
+          if (item.name && item.name.toLowerCase() === lowerToken) return true;
+          if (item.canonicalName && item.canonicalName.toLowerCase() === lowerToken) return true;
+          if (normToken && item.name && normalizeForComparison(item.name) === normToken) return true;
+          if (normToken && item.canonicalName && normalizeForComparison(item.canonicalName) === normToken) return true;
+          return false;
+        });
+
+        if (match) {
+          itemsToRemove.push(match);
+        }
+      }
+
+      if (itemsToRemove.length === 0) {
+        return { success: false, reason: 'NOT_FOUND' };
+      }
+    }
+
+    // Perform deletion of all resolved items on DB adapter
+    if (this.db && typeof this.db.deleteActiveItem === 'function') {
+      for (const itemToRemove of itemsToRemove) {
+        let deleted = false;
+        if (itemToRemove.id) {
+          deleted = await this.db.deleteActiveItem(chatId, itemToRemove.id);
+        }
+        if (!deleted && itemToRemove.name) {
+          deleted = await this.db.deleteActiveItem(chatId, itemToRemove.name);
+        }
+        if (!deleted && itemToRemove.canonicalName) {
+          await this.db.deleteActiveItem(chatId, itemToRemove.canonicalName);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      removedItem: itemsToRemove[0],
+      removedItems: itemsToRemove,
+      invalidIndices: invalidIndices.length > 0 ? invalidIndices : undefined
+    };
   }
 
   async resetList(arg1 = null, arg2 = null, arg3 = null) {
@@ -227,8 +322,14 @@ export class ShoppingListService {
 
     if (!itemName || !statusUpdates) return false;
     const cleanItem = itemName.trim().toLowerCase();
+    const normItem = normalizeForComparison(itemName);
     const items = await this.db.getActiveItems(chatId);
-    const item = items.find(i => i.canonicalName === cleanItem || i.name.toLowerCase() === cleanItem);
+    const item = items.find(i =>
+      i.canonicalName === cleanItem ||
+      i.name.toLowerCase() === cleanItem ||
+      (normItem && normalizeForComparison(i.canonicalName) === normItem) ||
+      (normItem && normalizeForComparison(i.name) === normItem)
+    );
     if (!item) return false;
 
     if (statusUpdates.isUrgent !== undefined) item.isUrgent = statusUpdates.isUrgent;
@@ -271,12 +372,13 @@ export class ShoppingListService {
           : ` (${item.store})`;
       }
       
-      let prefix = `${index + 1}.`;
-      if (item.isChecked) prefix = '✅';
-      else if (item.isUrgent) prefix = '🔴';
+      const numPrefix = `${index + 1}.`;
+      let statusEmoji = '';
+      if (item.isChecked) statusEmoji = '✅ ';
+      else if (item.isUrgent) statusEmoji = '🔴 ';
 
       const strike = item.isChecked ? '~' : '';
-      lines.push(`${prefix} ${strike}${item.name}${strike}${storeInfo}`);
+      lines.push(`${numPrefix} ${statusEmoji}${strike}${item.name}${strike}${storeInfo}`);
     });
 
     return lines.join('\n');
@@ -290,13 +392,14 @@ export class ShoppingListService {
     const groups = {};
     const others = [];
 
-    items.forEach(item => {
+    items.forEach((item, index) => {
+      const itemWithIndex = { ...item, originalIndex: index + 1 };
       if (item.store) {
         const storeName = item.store.toUpperCase();
         if (!groups[storeName]) groups[storeName] = [];
-        groups[storeName].push(item);
+        groups[storeName].push(itemWithIndex);
       } else {
-        others.push(item);
+        others.push(itemWithIndex);
       }
     });
 
@@ -305,12 +408,12 @@ export class ShoppingListService {
     for (const [store, storeItems] of Object.entries(groups)) {
       lines.push(`*${store}*`);
       storeItems.forEach(item => {
-        let prefix = '•';
-        if (item.isChecked) prefix = '✅';
-        else if (item.isUrgent) prefix = '🔴';
+        let statusEmoji = '';
+        if (item.isChecked) statusEmoji = '✅ ';
+        else if (item.isUrgent) statusEmoji = '🔴 ';
         const strike = item.isChecked ? '~' : '';
         const inferred = item.storeInferred ? ' (favorite)' : '';
-        lines.push(`  ${prefix} ${strike}${item.name}${strike}${inferred}`);
+        lines.push(`  ${item.originalIndex}. ${statusEmoji}${strike}${item.name}${strike}${inferred}`);
       });
       lines.push('');
     }
@@ -318,11 +421,11 @@ export class ShoppingListService {
     if (others.length > 0) {
       lines.push('*ALTRO*');
       others.forEach(item => {
-        let prefix = '•';
-        if (item.isChecked) prefix = '✅';
-        else if (item.isUrgent) prefix = '🔴';
+        let statusEmoji = '';
+        if (item.isChecked) statusEmoji = '✅ ';
+        else if (item.isUrgent) statusEmoji = '🔴 ';
         const strike = item.isChecked ? '~' : '';
-        lines.push(`  ${prefix} ${strike}${item.name}${strike}`);
+        lines.push(`  ${item.originalIndex}. ${statusEmoji}${strike}${item.name}${strike}`);
       });
     }
 

@@ -214,6 +214,136 @@ describe('Unit Test: WhatsAppClientWrapper', () => {
 
     assert.ok(repliedText.includes('WhatsApp Shopping List Bot'));
     assert.ok(repliedText.includes('Aggiungere un articolo'));
+    assert.ok(repliedText.includes('Cancellare articoli'));
+  });
+
+  it('routes REMOVE_ITEM command with single item to ShoppingListService', async () => {
+    const mockClient = new MockWhatsAppClient();
+    const db = new MockDatabaseAdapter();
+    const broadcaster = new MockBroadcaster();
+    const service = new ShoppingListService(db, broadcaster);
+
+    await service.addItem('123456789@c.us', 'latte', 'esselunga', 'Mario');
+
+    const wrapper = new WhatsAppClientWrapper({
+      client: mockClient,
+      service,
+      showTerminalQr: false
+    });
+
+    let repliedText = '';
+    const mockMsg = {
+      from: '123456789@c.us',
+      fromMe: false,
+      body: 'cancella latte',
+      reply: async (text) => {
+        repliedText = text;
+      }
+    };
+
+    await wrapper.handleIncomingMessage(mockMsg);
+    assert.ok(repliedText.includes('🗑️ Rimosso dalla lista: *latte*'));
+
+    const items = await service.getList('123456789@c.us');
+    assert.equal(items.length, 0);
+  });
+
+  it('routes REMOVE_ITEM command with numeric index (cancella 1)', async () => {
+    const mockClient = new MockWhatsAppClient();
+    const db = new MockDatabaseAdapter();
+    const broadcaster = new MockBroadcaster();
+    const service = new ShoppingListService(db, broadcaster);
+
+    await service.addItem('123456789@c.us', 'pane', 'coop', 'Mario');
+
+    const wrapper = new WhatsAppClientWrapper({
+      client: mockClient,
+      service,
+      showTerminalQr: false
+    });
+
+    let repliedText = '';
+    const mockMsg = {
+      from: '123456789@c.us',
+      fromMe: false,
+      body: 'cancella 1',
+      reply: async (text) => {
+        repliedText = text;
+      }
+    };
+
+    await wrapper.handleIncomingMessage(mockMsg);
+    assert.ok(repliedText.includes('🗑️ Rimosso dalla lista: *pane*'));
+
+    const items = await service.getList('123456789@c.us');
+    assert.equal(items.length, 0);
+  });
+
+  it('routes REMOVE_ITEM command with multiple indices (cancella 1,2)', async () => {
+    const mockClient = new MockWhatsAppClient();
+    const db = new MockDatabaseAdapter();
+    const broadcaster = new MockBroadcaster();
+    const service = new ShoppingListService(db, broadcaster);
+
+    await service.addItem('123456789@c.us', 'mele');
+    await service.addItem('123456789@c.us', 'pere');
+    await service.addItem('123456789@c.us', 'banane');
+
+    const wrapper = new WhatsAppClientWrapper({
+      client: mockClient,
+      service,
+      showTerminalQr: false
+    });
+
+    let repliedText = '';
+    const mockMsg = {
+      from: '123456789@c.us',
+      fromMe: false,
+      body: 'cancella 1,2',
+      reply: async (text) => {
+        repliedText = text;
+      }
+    };
+
+    await wrapper.handleIncomingMessage(mockMsg);
+    assert.ok(repliedText.includes('🗑️ Rimossi dalla lista:'));
+    assert.ok(repliedText.includes('• mele'));
+    assert.ok(repliedText.includes('• pere'));
+
+    const items = await service.getList('123456789@c.us');
+    assert.equal(items.length, 1);
+    assert.equal(items[0].name, 'banane');
+  });
+
+  it('handles REMOVE_ITEM with missing arguments and unknown items', async () => {
+    const mockClient = new MockWhatsAppClient();
+    const db = new MockDatabaseAdapter();
+    const broadcaster = new MockBroadcaster();
+    const service = new ShoppingListService(db, broadcaster);
+
+    const wrapper = new WhatsAppClientWrapper({
+      client: mockClient,
+      service,
+      showTerminalQr: false
+    });
+
+    let repliedText1 = '';
+    await wrapper.handleIncomingMessage({
+      from: '123456789@c.us',
+      fromMe: false,
+      body: 'cancella',
+      reply: async (text) => { repliedText1 = text; }
+    });
+    assert.ok(repliedText1.includes('⚠️ Specifica cosa cancellare'));
+
+    let repliedText2 = '';
+    await wrapper.handleIncomingMessage({
+      from: '123456789@c.us',
+      fromMe: false,
+      body: 'cancella inesistente',
+      reply: async (text) => { repliedText2 = text; }
+    });
+    assert.ok(repliedText2.includes('⚠️ Articolo non trovato nella lista della spesa'));
   });
 
   it('filters out self-messages by default', async () => {
